@@ -441,6 +441,10 @@ let run_tests
   max_backtracks
   max_unfolds
   max_array_length
+  null_in_every
+  seed
+  logging_level
+  interactive
   =
   (* flags *)
   Cerb_debug.debug_level := debug_level;
@@ -483,13 +487,25 @@ let run_tests
             prog5
             statement_locs;
           let config : TestGeneration.config =
-            { max_backtracks; max_unfolds; max_array_length }
+            { max_backtracks;
+              max_unfolds;
+              max_array_length;
+              null_in_every;
+              seed;
+              logging_level;
+              interactive
+            }
           in
-          TestGeneration.run ~output_dir ~filename config sigma prog5)
+          TestGeneration.run
+            ~output_dir
+            ~filename
+            ~with_ownership_checking
+            config
+            sigma
+            prog5;
+          if not dont_run then
+            Unix.execv (Filename.concat output_dir "run_tests.sh") (Array.of_list []))
         ();
-      if not dont_run then (
-        print_endline "Running tests is currently not supported.";
-        print_endline "You can run \"./run_tests.sh\" to perform testing.");
       Resultat.return ())
 
 
@@ -849,16 +865,17 @@ module Testing_flags = struct
 
   let gen_backtrack_attempts =
     let doc =
-      "Set the maximum attempts to satisfy a constraint before backtracking further"
+      "Set the maximum attempts to satisfy a constraint before backtracking further, \
+       during input generation"
     in
     Arg.(
       value
       & opt int TestGeneration.default_cfg.max_backtracks
-      & info [ "backtrack-attempts" ] ~doc)
+      & info [ "max-backtrack-attempts" ] ~doc)
 
 
   let gen_max_unfolds =
-    let doc = "Set the maximum number of unfolds for recursive predicates" in
+    let doc = "Set the maximum number of unfolds for recursive generators" in
     Arg.(
       value & opt int TestGeneration.default_cfg.max_unfolds & info [ "max-unfolds" ] ~doc)
 
@@ -869,6 +886,34 @@ module Testing_flags = struct
       value
       & opt int TestGeneration.default_cfg.max_array_length
       & info [ "max-array-length" ] ~doc)
+
+
+  let test_null_in_every =
+    let doc = "Set the likelihood of NULL being generated as 1 in every <n>" in
+    Arg.(
+      value
+      & opt (some int) TestGeneration.default_cfg.null_in_every
+      & info [ "null-in-every" ] ~doc)
+
+
+  let test_seed =
+    let doc = "Set the seed for random testing" in
+    Arg.(value & opt (some string) TestGeneration.default_cfg.seed & info [ "seed" ] ~doc)
+
+
+  let test_logging_level =
+    let doc = "Set the logging level for failing inputs from tests" in
+    Arg.(
+      value
+      & opt (some int) TestGeneration.default_cfg.logging_level
+      & info [ "logging-level" ] ~doc)
+
+
+  let interactive_testing =
+    let doc =
+      "Enable interactive features for testing, such as requesting more detailed logs"
+    in
+    Arg.(value & flag & info [ "interactive" ] ~doc)
 end
 
 let testing_cmd =
@@ -893,6 +938,10 @@ let testing_cmd =
     $ Testing_flags.gen_backtrack_attempts
     $ Testing_flags.gen_max_unfolds
     $ Testing_flags.test_max_array_length
+    $ Testing_flags.test_null_in_every
+    $ Testing_flags.test_seed
+    $ Testing_flags.test_logging_level
+    $ Testing_flags.interactive_testing
   in
   let doc =
     "Generates RapidCheck tests for all functions in [FILE] with CN specifications.\n\

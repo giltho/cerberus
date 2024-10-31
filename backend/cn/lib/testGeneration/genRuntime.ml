@@ -17,11 +17,17 @@ type term =
       { bt : BT.t;
         sz : int
       }
-  | Pick of { choices : (int * term) list }
+  | Pick of
+      { bt : BT.t;
+        choice_var : Sym.t;
+        choices : (int * term) list;
+        last_var : Sym.t
+      }
   | Alloc of { bytes : IT.t }
   | Call of
       { fsym : Sym.t;
-        iargs : (Sym.t * Sym.t) list
+        iargs : (Sym.t * Sym.t) list;
+        oarg_bt : BT.t
       }
   | Asgn of
       { pointer : Sym.t;
@@ -57,7 +63,8 @@ type term =
         min : IT.t;
         max : IT.t;
         perm : IT.t;
-        inner : term
+        inner : term;
+        last_var : Sym.t
       }
 [@@deriving eq, ord]
 
@@ -66,9 +73,10 @@ let is_return (tm : term) : bool = match tm with Return _ -> true | _ -> false
 let rec free_vars_term (tm : term) : SymSet.t =
   match tm with
   | Uniform _ -> SymSet.empty
-  | Pick { choices } -> free_vars_term_list (List.map snd choices)
+  | Pick { bt = _; choice_var = _; choices; last_var = _ } ->
+    free_vars_term_list (List.map snd choices)
   | Alloc { bytes } -> IT.free_vars bytes
-  | Call { fsym = _; iargs } -> SymSet.of_list (List.map snd iargs)
+  | Call { fsym = _; iargs; oarg_bt = _ } -> SymSet.of_list (List.map snd iargs)
   | Asgn { pointer; offset; sct = _; value; last_var = _; rest } ->
     List.fold_left
       SymSet.union
@@ -84,7 +92,7 @@ let rec free_vars_term (tm : term) : SymSet.t =
     SymSet.union (LC.free_vars prop) (free_vars_term rest)
   | ITE { bt = _; cond; t; f } ->
     SymSet.union (IT.free_vars cond) (free_vars_term_list [ t; f ])
-  | Map { i; bt = _; min; max; perm; inner } ->
+  | Map { i; bt = _; min; max; perm; inner; last_var = _ } ->
     SymSet.remove
       i
       (SymSet.union (IT.free_vars_list [ min; max; perm ]) (free_vars_term inner))
@@ -99,25 +107,43 @@ let rec pp_term (tm : term) : Pp.document =
   let open Pp in
   match tm with
   | Uniform { bt; sz } -> string "uniform" ^^ angles (BT.pp bt) ^^ parens (int sz)
-  | Pick { choices } ->
+  | Pick { bt; choice_var; choices; last_var } ->
     string "pick"
     ^^ parens
-         (brackets
-            (separate_map
-               (semi ^^ break 1)
-               (fun (w, gt) ->
-                 parens (int w ^^ comma ^^ braces (nest 2 (break 1 ^^ pp_term gt))))
-               choices))
+         (c_comment (string "chosen by " ^^ Sym.pp choice_var)
+          ^^ comma
+          ^^ break 1
+          ^^ twice slash
+          ^^ space
+          ^^ string "backtracks to"
+          ^^ space
+          ^^ Sym.pp last_var
+          ^^ break 1
+          ^^ brackets
+               (nest
+                  2
+                  (break 1
+                   ^^ c_comment (BT.pp bt)
+                   ^^ break 1
+                   ^^ separate_map
+                        (semi ^^ break 1)
+                        (fun (w, gt) ->
+                          parens
+                            (int w ^^ comma ^^ braces (nest 2 (break 1 ^^ pp_term gt))))
+                        choices)))
   | Alloc { bytes } -> string "alloc" ^^ parens (IT.pp bytes)
-  | Call { fsym; iargs } ->
-    Sym.pp fsym
-    ^^ parens
-         (nest
-            2
-            (separate_map
-               (comma ^^ break 1)
-               (fun (x, y) -> Sym.pp x ^^ colon ^^ space ^^ Sym.pp y)
-               iargs))
+  | Call { fsym; iargs; oarg_bt } ->
+    parens
+      (Sym.pp fsym
+       ^^ parens
+            (nest
+               2
+               (separate_map
+                  (comma ^^ break 1)
+                  (fun (x, y) -> Sym.pp x ^^ colon ^^ space ^^ Sym.pp y)
+                  iargs))
+       ^^ space
+       ^^ BT.pp oarg_bt)
   | Asgn
       { pointer : Sym.t;
         offset : IT.t;
@@ -193,12 +219,12 @@ let rec pp_term (tm : term) : Pp.document =
     ^^ space
     ^^ parens (IT.pp cond)
     ^^ space
-    ^^ braces (c_comment (BT.pp bt) ^^ nest 2 (break 1 ^^ pp_term t) ^^ break 1)
+    ^^ braces (nest 2 (break 1 ^^ c_comment (BT.pp bt) ^^ break 1 ^^ pp_term t) ^^ break 1)
     ^^ space
     ^^ string "else"
     ^^ space
     ^^ braces (nest 2 (break 1 ^^ pp_term f) ^^ break 1)
-  | Map { i : Sym.t; bt : BT.t; min : IT.t; max : IT.t; perm : IT.t; inner : term } ->
+  | Map { i; bt; min; max; perm; inner; last_var } ->
     let i_bt, _ = BT.map_bt bt in
     string "map"
     ^^ space
@@ -210,7 +236,8 @@ let rec pp_term (tm : term) : Pp.document =
           ^^ space
           ^^ IT.pp perm
           ^^ c_comment
-               (IT.pp min ^^ string " <= " ^^ Sym.pp i ^^ string " <= " ^^ IT.pp max))
+               (IT.pp min ^^ string " <= " ^^ Sym.pp i ^^ string " <= " ^^ IT.pp max)
+          ^^ c_comment (string "backtracks to" ^^ space ^^ Sym.pp last_var))
     ^^ braces (c_comment (BT.pp bt) ^^ nest 2 (break 1 ^^ pp_term inner) ^^ break 1)
 
 
@@ -244,19 +271,16 @@ let nice_names (inputs : SymSet.t) (gt : GT.t) : GT.t =
       let vars, gt_inner = aux vars gt_inner in
       let name = basename x in
       let vars, x, gt' =
-        if SymSet.mem x inputs then
-          (vars, x, gt')
-        else (
-          match StringMap.find_opt name vars with
-          | Some n ->
-            let name' = name ^ "_" ^ string_of_int n in
-            let y = Sym.fresh_named name' in
-            ( StringMap.add name (n + 1) vars,
-              y,
-              GT.subst
-                (IT.make_subst [ (x, IT.sym_ (y, GT.bt gt_inner, GT.loc gt_inner)) ])
-                gt' )
-          | None -> (StringMap.add name 1 vars, x, gt'))
+        match StringMap.find_opt name vars with
+        | Some n ->
+          let name' = name ^ "_" ^ string_of_int n in
+          let y = Sym.fresh_named name' in
+          ( StringMap.add name (n + 1) vars,
+            y,
+            GT.subst
+              (IT.make_subst [ (x, IT.sym_ (y, GT.bt gt_inner, GT.loc gt_inner)) ])
+              gt' )
+        | None -> (StringMap.add name 1 vars, x, gt')
       in
       let vars, gt' = aux vars gt' in
       (vars, GT.let_ (backtracks, (x, gt_inner), gt') loc)
@@ -269,13 +293,27 @@ let nice_names (inputs : SymSet.t) (gt : GT.t) : GT.t =
       (vars, GT.ite_ (it_if, gt_then, gt_else) loc)
     | Map ((i_sym, i_bt, it_perm), gt_inner) ->
       let vars, gt_inner = aux vars gt_inner in
+      let name = basename i_sym in
+      let vars, i_sym, it_perm, gt_inner =
+        match StringMap.find_opt name vars with
+        | Some n ->
+          let name' = name ^ "_" ^ string_of_int n in
+          let j = Sym.fresh_named name' in
+          let su = IT.make_subst [ (i_sym, IT.sym_ (j, i_bt, loc)) ] in
+          (StringMap.add name (n + 1) vars, j, IT.subst su it_perm, GT.subst su gt_inner)
+        | None -> (StringMap.add name 1 vars, i_sym, it_perm, gt_inner)
+      in
       (vars, GT.map_ ((i_sym, i_bt, it_perm), gt_inner) loc)
   in
-  snd (aux StringMap.empty gt)
+  snd
+    (aux
+       (inputs |> SymSet.to_seq |> Seq.map (fun x -> (basename x, 1)) |> StringMap.of_seq)
+       gt)
 
 
 let elaborate_gt (inputs : SymSet.t) (gt : GT.t) : term =
   let rec aux (vars : Sym.t list) (gt : GT.t) : term =
+    let last_var = match vars with v :: _ -> v | [] -> bennet in
     let (GT (gt_, bt, loc)) = gt in
     match gt_ with
     | Arbitrary ->
@@ -284,7 +322,34 @@ let elaborate_gt (inputs : SymSet.t) (gt : GT.t) : term =
           plain
             (string "Value from " ^^ Locations.pp loc ^^ string " is still `arbitrary`"))
     | Uniform sz -> Uniform { bt; sz }
-    | Pick wgts -> Pick { choices = List.map_snd (aux vars) wgts }
+    | Pick wgts ->
+      let choice_var = Sym.fresh () in
+      Pick
+        { bt;
+          choice_var;
+          choices =
+            (let wgts =
+               let gcd =
+                 List.fold_left
+                   (fun x y -> Z.gcd x y)
+                   (fst (List.hd wgts))
+                   (List.map fst (List.tl wgts))
+               in
+               List.map_fst (fun x -> Z.div x gcd) wgts
+             in
+             let w_sum = List.fold_left Z.add Z.zero (List.map fst wgts) in
+             let max_int = Z.of_int Int.max_int in
+             let f =
+               if Z.leq w_sum max_int then
+                 fun w -> Z.to_int w
+               else
+                 fun w ->
+               Z.to_int
+                 (Z.max Z.one (Z.div w (Z.div (Z.add w_sum (Z.pred max_int)) max_int)))
+             in
+             List.map (fun (w, gt) -> (f w, aux (choice_var :: vars) gt)) wgts);
+          last_var
+        }
     | Alloc bytes -> Alloc { bytes }
     | Call (fsym, xits) ->
       let (iargs : (Sym.t * Sym.t) list), (gt_lets : Sym.t -> term -> term) =
@@ -308,7 +373,7 @@ let elaborate_gt (inputs : SymSet.t) (gt : GT.t) : term =
           xits
           ([], fun _ gr -> gr)
       in
-      gt_lets (match vars with v :: _ -> v | [] -> bennet) (Call { fsym; iargs })
+      gt_lets last_var (Call { fsym; iargs; oarg_bt = bt })
     | Asgn ((it_addr, sct), value, rest) ->
       let pointer, offset = GA.get_addr_offset it_addr in
       if not (SymSet.mem pointer inputs || List.exists (Sym.equal pointer) vars) then
@@ -318,49 +383,38 @@ let elaborate_gt (inputs : SymSet.t) (gt : GT.t) : term =
            ^ String.concat "; " (List.map Sym.pp_string vars)
            ^ "] from "
            ^ Pp.plain (Locations.pp (IT.loc it_addr)));
-      Asgn
-        { pointer;
-          offset;
-          sct;
-          value;
-          last_var = (if SymSet.mem pointer inputs then bennet else pointer);
-          rest = aux vars rest
-        }
+      Asgn { pointer; offset; sct; value; last_var; rest = aux vars rest }
     | Let (backtracks, (x, gt1), gt2) ->
       Let
         { backtracks;
           x;
           x_bt = GT.bt gt1;
           value = aux vars gt1;
-          last_var = (match vars with v :: _ -> v | [] -> bennet);
+          last_var;
           rest = aux (x :: vars) gt2
         }
     | Return value -> Return { value }
-    | Assert (prop, rest) ->
-      Assert
-        { prop;
-          last_var =
-            (match List.find_opt (fun x -> SymSet.mem x (LC.free_vars prop)) vars with
-             | Some y -> y
-             | None ->
-               if SymSet.is_empty (SymSet.diff (LC.free_vars prop) inputs) then
-                 bennet
-               else
-                 failwith
-                   Pp.(plain (LC.pp prop ^^ space ^^ at ^^ space ^^ string __LOC__)));
-          rest = aux vars rest
-        }
+    | Assert (prop, rest) -> Assert { prop; last_var; rest = aux vars rest }
     | ITE (cond, gt_then, gt_else) ->
       ITE { bt; cond; t = aux vars gt_then; f = aux vars gt_else }
     | Map ((i, i_bt, perm), inner) ->
       let min, max = GenAnalysis.get_bounds (i, i_bt) perm in
-      Map { i; bt = Map (i_bt, GT.bt inner); min; max; perm; inner = aux vars inner }
+      Map
+        { i;
+          bt = Map (i_bt, GT.bt inner);
+          min;
+          max;
+          perm;
+          inner = aux (i :: vars) inner;
+          last_var
+        }
   in
   aux [] (nice_names inputs gt)
 
 
 type definition =
-  { name : Sym.t;
+  { filename : string;
+    name : Sym.t;
     iargs : (Sym.t * BT.t) list;
     oargs : (Sym.t * BT.t) list;
     body : term
@@ -391,11 +445,14 @@ let pp_definition (def : definition) : Pp.document =
      ^^ rbrace)
 
 
-let elaborate_gd (gd : GD.t) : definition =
-  { name = gd.name;
-    iargs = List.map_snd GBT.bt gd.iargs;
-    oargs = List.map_snd GBT.bt gd.oargs;
-    body = elaborate_gt (SymSet.of_list (List.map fst gd.iargs)) (Option.get gd.body)
+let elaborate_gd ({ filename; recursive = _; spec = _; name; iargs; oargs; body } : GD.t)
+  : definition
+  =
+  { filename;
+    name;
+    iargs = List.map_snd GBT.bt iargs;
+    oargs = List.map_snd GBT.bt oargs;
+    body = elaborate_gt (SymSet.of_list (List.map fst iargs)) (Option.get body)
   }
 
 

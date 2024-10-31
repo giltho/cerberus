@@ -4,6 +4,7 @@ module LC = LogicalConstraints
 module GT = GenTerms
 module GD = GenDefinitions
 module GA = GenAnalysis
+module SymSet = Set.Make (Sym)
 module SymMap = Map.Make (Sym)
 module Config = TestGenConfig
 
@@ -44,15 +45,20 @@ let apply_array_max_length (gt : GT.t) : GT.t =
     | Map ((i, i_bt, it_perm), gt') ->
       let _it_min, it_max = GenAnalysis.get_bounds (i, i_bt) it_perm in
       let loc = Locations.other __LOC__ in
+      let it_max_min =
+        IT.le_
+          ( IT.num_lit_ (Z.of_int 0) (IT.bt it_max) loc,
+            IT.add_ (it_max, IT.num_lit_ Z.one (IT.bt it_max) loc) loc )
+          loc
+      in
+      let it_max_max =
+        IT.lt_
+          ( it_max,
+            IT.num_lit_ (Z.of_int (Config.get_max_array_length ())) (IT.bt it_max) loc )
+          loc
+      in
       GT.assert_
-        ( LC.T
-            (IT.le_
-               ( it_max,
-                 IT.num_lit_
-                   (Z.of_int (Config.get_max_array_length ()))
-                   (IT.bt it_max)
-                   loc )
-               loc),
+        ( LC.T (IT.and2_ (it_max_min, it_max_max) loc),
           GT.map_ ((i, i_bt, it_perm), aux gt') here )
         loc
   in
@@ -99,45 +105,14 @@ let confirm_distribution (gt : GT.t) : GT.t =
            ^^ brackets (separate_map (comma ^^ break 1) Locations.pp failures)))
 
 
-let pull_out_inner_generators (gt : GT.t) : GT.t =
-  let aux (gt : GT.t) : GT.t =
-    match gt with
-    | GT (Let (x_backtracks, (x, gt1), gt2), _, loc_let) ->
-      (match gt1 with
-       | GT (Asgn ((it_addr, sct), it_val, gt3), _, loc_asgn) ->
-         GT.asgn_
-           ((it_addr, sct), it_val, GT.let_ (x_backtracks, (x, gt3), gt2) loc_let)
-           loc_asgn
-       | GT (Let (y_backtracks', (y, gt3), gt4), _, loc_let') ->
-         let z = Sym.fresh () in
-         let rename =
-           GT.subst
-             (IT.make_subst [ (y, IT.sym_ (z, GT.bt gt3, Locations.other __LOC__)) ])
-         in
-         GT.let_
-           ( y_backtracks',
-             (z, gt3),
-             rename (GT.let_ (x_backtracks, (x, gt4), gt2) loc_let) )
-           loc_let'
-       | GT (Assert (lc, gt3), _, loc_assert) ->
-         GT.assert_ (lc, GT.let_ (x_backtracks, (x, gt3), gt2) loc_let) loc_assert
-       | _ -> gt)
-    | _ -> gt
-  in
-  GT.map_gen_pre aux gt
-
-
 let distribute_gen (gt : GT.t) : GT.t =
-  gt
-  |> allocations
-  |> apply_array_max_length
-  |> default_weights
-  |> confirm_distribution
-  |> pull_out_inner_generators
+  gt |> allocations |> apply_array_max_length |> default_weights |> confirm_distribution
 
 
-let distribute_gen_def ({ name; iargs; oargs; body } : GD.t) : GD.t =
-  { name; iargs; oargs; body = Option.map distribute_gen body }
+let distribute_gen_def ({ filename; recursive; spec; name; iargs; oargs; body } : GD.t)
+  : GD.t
+  =
+  { filename; recursive; spec; name; iargs; oargs; body = Option.map distribute_gen body }
 
 
 let distribute (ctx : GD.context) : GD.context =

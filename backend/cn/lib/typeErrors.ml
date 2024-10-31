@@ -205,7 +205,7 @@ type message =
         model : Solver.model_with_q
       }
   | Alloc_out_of_bounds of
-      { ptr : IT.t;
+      { term : IT.t;
         constr : IT.t;
         ub : CF.Undefined.undefined_behaviour;
         ctxt : Context.t * log;
@@ -238,8 +238,7 @@ type message =
   | Duplicate_pattern
   | Empty_provenance
   | Inconsistent_assumptions of string * (Context.t * log)
-  | To_bytes_needs_owned
-  | From_bytes_needs_each_owned
+  | Byte_conv_needs_owned
 
 type type_error =
   { loc : Locations.t;
@@ -509,8 +508,8 @@ let pp_message te =
       | None -> !^(CF.Undefined.ub_short_string ub)
     in
     { short; descr = Some descr; state = Some state }
-  | Alloc_out_of_bounds { constr; ptr; ub; ctxt; model } ->
-    let short = !^"Pointer " ^^ bquotes (IT.pp ptr) ^^ !^" out of bounds" in
+  | Alloc_out_of_bounds { constr; term; ub; ctxt; model } ->
+    let short = bquotes (IT.pp term) ^^ !^" out of bounds" in
     let state =
       trace ctxt model Explain.{ no_ex with unproven_constraint = Some (LC.T constr) }
     in
@@ -601,11 +600,8 @@ let pp_message te =
     let short = !^kind ^^ !^" makes inconsistent assumptions" in
     let state = Some (trace ctxt_log (Solver.empty_model, []) Explain.no_ex) in
     { short; descr = None; state }
-  | To_bytes_needs_owned ->
-    let short = !^"to_bytes only supports Owned/Block" in
-    { short; descr = None; state = None }
-  | From_bytes_needs_each_owned ->
-    let short = !^"from_bytes only supports each (u64; ..) { Owned/Block(..) }" in
+  | Byte_conv_needs_owned ->
+    let short = !^"byte conversion only supports Owned/Block" in
     { short; descr = None; state = None }
 
 

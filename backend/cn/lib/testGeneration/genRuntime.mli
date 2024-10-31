@@ -12,11 +12,17 @@ type term =
       { bt : BT.t;
         sz : int
       }
-  | Pick of { choices : (int * term) list }
+  | Pick of
+      { bt : BT.t;
+        choice_var : Sym.t;
+        choices : (int * term) list;
+        last_var : Sym.t
+      }
   | Alloc of { bytes : IT.t }
   | Call of
       { fsym : Sym.t;
-        iargs : (Sym.t * Sym.t) list
+        iargs : (Sym.t * Sym.t) list;
+        oarg_bt : BT.t
       }
   | Asgn of
       { pointer : Sym.t;
@@ -52,7 +58,8 @@ type term =
         min : IT.t;
         max : IT.t;
         perm : IT.t;
-        inner : term
+        inner : term;
+        last_var : Sym.t
       }
 [@@deriving eq, ord]
 
@@ -63,7 +70,8 @@ val free_vars_term_list : term list -> SymSet.t
 val pp_term : term -> Pp.document
 
 type definition =
-  { name : Sym.t;
+  { filename : string;
+    name : Sym.t;
     iargs : (Sym.t * BT.t) list;
     oargs : (Sym.t * BT.t) list;
     body : term

@@ -4,11 +4,13 @@
 #include <string.h>
 #include <setjmp.h>
 #include <signal.h>
+#include <inttypes.h>
 
 #include <cn-executable/utils.h>
 
 #include <cn-testing/result.h>
 #include <cn-testing/rand.h>
+#include <cn-testing/alloc.h>
 
 typedef enum cn_test_result cn_test_case_fn(void);
 
@@ -57,13 +59,17 @@ int cn_test_main(int argc, char* argv[]) {
             logging_level = strtol(argv[i + 1], NULL, 10);
             i++;
         }
+        else if (strcmp("--null-in-every", arg) == 0) {
+            set_null_in_every(strtol(argv[i + 1], NULL, 16));
+            i++;
+        }
     }
 
     if (interactive) {
         printf("Running in interactive mode\n");
     }
 
-    printf("Using seed: %016llx\n", seed);
+    printf("Using seed: %016" PRIx64 "\n", seed);
     cn_gen_srand(seed);
     cn_gen_rand(); // Junk to get something to make a checkpoint from
 

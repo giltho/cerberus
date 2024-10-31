@@ -19,49 +19,48 @@ FILES=$(find "$DIRNAME"/src -name '*.c')
 NUM_FAILED=0
 FAILED=''
 
+function separator() {
+  printf '\n'
+  for i in {1..60}; do
+    printf "="
+  done
+  printf '\n\n'
+}
+
 # Test each `*.c` file
 for TEST in $FILES; do
-  CLEANUP="rm -rf test/* run_tests.sh;"
-
-  # Generate tests
-  $CN test "$TEST" --output-dir="test" --with-ownership-checking --no-run
-  RET=$?
-  if [[ "$RET" != 0 ]]; then
-    echo "$TEST -- Error during test generation"
-    NUM_FAILED=$(($NUM_FAILED + 1))
-    FAILED="$FAILED $TEST"
-    eval "$CLEANUP"
-    continue
-  else
-    echo "$TEST -- Test generated successfully"
-  fi
+  CLEANUP="rm -rf test/* run_tests.sh;separator"
 
   # Run passing tests
   if [[ $TEST == *.pass.c ]]; then
-    ./run_tests.sh
+    $CN test "$TEST" --output-dir="test" --with-ownership-checking
     RET=$?
     if [[ "$RET" != 0 ]]; then
+      echo
       echo "$TEST -- Tests failed unexpectedly"
       NUM_FAILED=$(($NUM_FAILED + 1))
       FAILED="$FAILED $TEST"
       eval "$CLEANUP"
       continue
     else
+      echo
       echo "$TEST -- Tests passed successfully"
     fi
   fi
 
   # Run failing tests
   if [[ $TEST == *.fail.c ]]; then
-    ./run_tests.sh
+    $CN test "$TEST" --output-dir="test" --with-ownership-checking
     RET=$?
     if [[ "$RET" = 0 ]]; then
+      echo
       echo "$TEST -- Tests passed unexpectedly"
       NUM_FAILED=$(($NUM_FAILED + 1))
       FAILED="$FAILED $TEST"
       eval "$CLEANUP"
       continue
     else
+      echo
       echo "$TEST -- Tests failed successfully"
     fi
   fi
@@ -69,7 +68,6 @@ for TEST in $FILES; do
   eval "$CLEANUP"
 done
 
-echo
 echo 'Done running tests.'
 echo
 
