@@ -1,40 +1,53 @@
 #ifndef CN_ALLOC
 #define CN_ALLOC
 
+#include <stddef.h>
+#include <stdint.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-// enum CNTYPE {
-//     NODE_CN,
-//     SEQ,
-//     HASH_TABLE,
-//     HT_ENTRY,
-//     UNSIGNED_INT,
-//     CN_BOOL,
-//     CN_POINTER,
-//     CNTYPE_SIZE
-// };
+    ////////////////////
+    // Bump Allocator //
+    ////////////////////
 
-void *alloc_(long nbytes, const char *, int);
+    void* cn_bump_aligned_alloc(size_t alignment, size_t nbytes);
 
-#define alloc(x)\
-    alloc_(x, __FILE__, __LINE__)
+    void* cn_bump_malloc(size_t nbytes);
 
-void *zalloc_(long nbytes, const char *, int);
+    void* cn_bump_calloc(size_t count, size_t size);
 
-#define zalloc(x)\
-    zalloc_(x, __FILE__, __LINE__)
+    void cn_bump_free_all();
 
-void free_all(void);
+    typedef struct {
+        uint16_t block;
+        char* pointer;
+    } cn_bump_frame_id;
 
-typedef void* alloc_checkpoint;
+    cn_bump_frame_id cn_bump_get_frame_id(void);
 
-alloc_checkpoint alloc_save_checkpoint(void);
+    void cn_bump_free_after(cn_bump_frame_id frame_id);
 
-void free_after(alloc_checkpoint ptr);
+    void cn_bump_print();
 
-// void *alloc_zeros(long nbytes);
+    //////////////////////////////////
+    // Explicit Free List Allocator //
+    //////////////////////////////////
+
+    void* cn_fl_aligned_alloc(size_t alignment, size_t size);
+
+    void* cn_fl_malloc(size_t size);
+
+    void* cn_fl_calloc(size_t count, size_t size);
+
+    void* cn_fl_realloc(void* p, size_t size);
+
+    void cn_fl_free(void* p);
+
+    void cn_fl_free_all();
+
+    void cn_fl_print();
 
 #ifdef __cplusplus
 }

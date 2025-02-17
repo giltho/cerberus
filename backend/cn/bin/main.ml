@@ -125,6 +125,7 @@ let with_well_formedness_check
   ~macros
   ~incl_dirs
   ~incl_files
+  ~coq_export_file
   ~csv_times
   ~log_times
   ~astprints
@@ -167,6 +168,9 @@ let with_well_formedness_check
           prog
       in
       print_log_file ("mucore", MUCORE prog5);
+      Option.iter
+        (fun path -> Pp.print_file path (Pp_mucore_coq.pp_unit_file prog5))
+        coq_export_file;
       let paused =
         Typing.run_to_pause Context.empty (Check.check_decls_lemmata_fun_specs prog5)
       in
@@ -246,6 +250,7 @@ let well_formed
     ~macros
     ~incl_dirs
     ~incl_files
+    ~coq_export_file:None
     ~csv_times
     ~log_times
     ~astprints
@@ -271,6 +276,7 @@ let verify
   output_dir
   diag
   lemmata
+  coq_export_file
   only
   skip
   csv_times
@@ -318,6 +324,7 @@ let verify
     ~macros
     ~incl_dirs
     ~incl_files
+    ~coq_export_file
     ~csv_times
     ~log_times
     ~astprints
@@ -410,6 +417,7 @@ let generate_executable_specs
     ~macros
     ~incl_dirs
     ~incl_files
+    ~coq_export_file:None
     ~csv_times
     ~log_times
     ~astprints
@@ -466,18 +474,20 @@ let run_tests
   null_in_every
   seed
   logging_level
+  trace_granularity
   progress_level
-  interactive
   until_timeout
   exit_fast
   max_stack_depth
   allowed_depth_failures
   max_generator_size
+  sizing_strategy
   random_size_splits
   allowed_size_split_backtracks
   sized_null
   coverage
   disable_passes
+  trap
   =
   (* flags *)
   Cerb_debug.debug_level := debug_level;
@@ -495,6 +505,7 @@ let run_tests
     ~incl_dirs
     ~incl_files
     ~csv_times
+    ~coq_export_file:None
     ~log_times
     ~astprints
     ~no_inherit_loc
@@ -512,18 +523,20 @@ let run_tests
           null_in_every;
           seed;
           logging_level;
+          trace_granularity;
           progress_level;
-          interactive;
           until_timeout;
           exit_fast;
           max_stack_depth;
           allowed_depth_failures;
           max_generator_size;
+          sizing_strategy;
           random_size_splits;
           allowed_size_split_backtracks;
           sized_null;
           coverage;
-          disable_passes
+          disable_passes;
+          trap
         }
       in
       TestGeneration.set_config config;
@@ -823,6 +836,12 @@ module Lemma_flags = struct
     Arg.(value & opt (some string) None & info [ "lemmata" ] ~docv:"FILE" ~doc)
 end
 
+module CoqExport_flags = struct
+  let coq_export =
+    let doc = "export to coq" in
+    Arg.(value & opt (some string) None & info [ "coq-export-file" ] ~docv:"FILE" ~doc)
+end
+
 let wf_cmd =
   let open Term in
   let wf_t =
@@ -870,6 +889,7 @@ let verify_t : unit Term.t =
   $ Verify_flags.output_dir
   $ Verify_flags.diag
   $ Lemma_flags.lemmata
+  $ CoqExport_flags.coq_export
   $ Verify_flags.only
   $ Verify_flags.skip
   $ Common_flags.csv_times
@@ -901,7 +921,7 @@ let verify_cmd =
 module Testing_flags = struct
   let output_test_dir =
     let doc = "Place generated tests in the provided directory" in
-    Arg.(required & opt (some string) None & info [ "output-dir" ] ~docv:"FILE" ~doc)
+    Arg.(value & opt string "." & info [ "output-dir" ] ~docv:"DIR" ~doc)
 
 
   let only =
@@ -1005,6 +1025,14 @@ module Testing_flags = struct
       & info [ "logging-level" ] ~doc)
 
 
+  let trace_granularity =
+    let doc = "Set the trace granularity for failing inputs from tests" in
+    Arg.(
+      value
+      & opt (some int) TestGeneration.default_cfg.trace_granularity
+      & info [ "trace-granularity" ] ~doc)
+
+
   let progress_level =
     let doc =
       "Set the level of detail for progress updates (0 = Quiet, 1 = Per function, 2 = \
@@ -1014,13 +1042,6 @@ module Testing_flags = struct
       value
       & opt (some int) TestGeneration.default_cfg.progress_level
       & info [ "progress-level" ] ~doc)
-
-
-  let interactive =
-    let doc =
-      "Enable interactive features for testing, such as requesting more detailed logs"
-    in
-    Arg.(value & flag & info [ "interactive" ] ~doc)
 
 
   let until_timeout =
@@ -1060,6 +1081,16 @@ module Testing_flags = struct
       value
       & opt (some int) TestGeneration.default_cfg.max_generator_size
       & info [ "max-generator-size" ] ~doc)
+
+
+  let sizing_strategy =
+    let doc =
+      "Strategy for deciding test case size (0 = Uniform, 1 = Quartile, 2 = QuickCheck)"
+    in
+    Arg.(
+      value
+      & opt (some int) TestGeneration.default_cfg.sizing_strategy
+      & info [ "sizing-strategy" ] ~doc)
 
 
   let random_size_splits =
@@ -1105,6 +1136,11 @@ module Testing_flags = struct
                 ]))
           []
       & info [ "disable" ] ~doc)
+
+
+  let trap =
+    let doc = "Raise SIGTRAP on test failure" in
+    Arg.(value & flag & info [ "trap" ] ~doc)
 end
 
 let testing_cmd =
@@ -1137,18 +1173,20 @@ let testing_cmd =
     $ Testing_flags.null_in_every
     $ Testing_flags.seed
     $ Testing_flags.logging_level
+    $ Testing_flags.trace_granularity
     $ Testing_flags.progress_level
-    $ Testing_flags.interactive
     $ Testing_flags.until_timeout
     $ Testing_flags.exit_fast
     $ Testing_flags.max_stack_depth
     $ Testing_flags.allowed_depth_failures
     $ Testing_flags.max_generator_size
+    $ Testing_flags.sizing_strategy
     $ Testing_flags.random_size_splits
     $ Testing_flags.allowed_size_split_backtracks
     $ Testing_flags.sized_null
     $ Testing_flags.coverage
     $ Testing_flags.disable_passes
+    $ Testing_flags.trap
   in
   let doc =
     "Generates tests for all functions in [FILE] with CN specifications.\n\

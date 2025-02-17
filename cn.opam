@@ -10,6 +10,7 @@ authors: [
   "Zain K Aamer"
   "Kayvan Memarian"
 ]
+license: "BSD-2-Clause"
 homepage: "https://rems-project.github.io/cn-tutorial"
 bug-reports: "https://github.com/rems-project/cerberus/issues"
 depends: [
