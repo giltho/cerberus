@@ -149,9 +149,9 @@ let gen_typing_type_of_constant loc iCst =
 
 (* the GCC documentation says "he compound statement should be an expression followed by a semicolon", otherwise the type is void *)
 val     typeof_statement_as_expression: statement genTypeCategory -> genTypeCategory
-let rec typeof_statement_as_expression (AnnotatedStatement _ _ stmt_) =
+let rec typeof_statement_as_expression stmt =
   let void_gtc = GenRValueType GenVoid in
-  match stmt_ with
+  match stmt.node with
     | AilSexpr (AnnotatedExpression gtc _ _ _) ->
         gtc
     | AilSlabel _ s _ ->
@@ -1636,6 +1636,7 @@ let rec annotate_expression annotate_block sigm gamm ctx (AnnotatedExpression ()
   end
   >>= fun (expr_', gtc) ->
   E.unpack >>= fun annots ->
+  let annots = List.append std_annots  $ List.map Annot.Astd annots in
   perform_decays sigm ctx (AnnotatedExpression gtc annots loc expr_')
 
 
@@ -2177,9 +2178,9 @@ let rec annotate_statement_ loc sigm gamm ty stmt =
         E.return (AilSmarker id s')
   end
 
-and annotate_statement sigm gamm ty (AnnotatedStatement loc attrs stmt) =
-  annotate_statement_ loc sigm gamm ty stmt >>= fun stmt' ->
-  E.return (AnnotatedStatement loc attrs stmt')
+and annotate_statement sigm gamm ty stmt =
+  annotate_statement_ stmt.loc sigm gamm ty stmt.node >>= fun node' ->
+  E.return (mk_statement_full stmt.loc stmt.is_forloop stmt.attrs node')
 
 (* ty_opt should be Nothing if the annotate_block is passed to a function
    annotating outside of the body of a function *)
@@ -2298,7 +2299,7 @@ let annotate_sigma sigm =
     cn_functions=  sigm.cn_functions;
     cn_lemmata=  sigm.cn_lemmata;
     cn_datatypes=  sigm.cn_datatypes;
-    cn_fun_specs=  sigm.cn_fun_specs;
+    cn_decl_specs=  sigm.cn_decl_specs;
     cn_idents=  sigm.cn_idents;
   |>
 

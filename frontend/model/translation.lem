@@ -388,10 +388,10 @@ else
                                   ; Caux.mk_specified_pat obj2_wrp.E.sym_pat ]
               , Caux.mk_let_pe conv1_wrp.E.sym_pat promoted1_pe (
                   Caux.mk_let_pe conv2_wrp.E.sym_pat promoted2_pe (
-                    Caux.mk_if_pe_ [Annot.Anot_explode] (Caux.mk_op_pe C.OpEq conv2_wrp.E.sym_pe zero_pe)
+                    Caux.mk_if_pe (Caux.mk_op_pe C.OpEq conv2_wrp.E.sym_pe zero_pe)
                       (Caux.mk_std_undef_pe loc "§6.5.5#5, sentence 2" ub)
                       (* if a/b is representable *)
-                      ( Caux.mk_if_pe_ [Annot.Anot_explode] (stdlib.mkcall_is_representable (Caux.mk_op_pe C.OpDiv promoted1_pe conv2_wrp.E.sym_pe) result_ty)
+                      ( Caux.mk_if_pe (stdlib.mkcall_is_representable (Caux.mk_op_pe C.OpDiv promoted1_pe conv2_wrp.E.sym_pe) result_ty)
                           begin
                             Caux.mk_specified_pe (Caux.mk_std_pe "§6.5.5#5, sentence 1" begin
                               if AilTypesAux.is_signed_integer_type result_ty then
@@ -454,7 +454,7 @@ begin if AilTypesAux.is_real (ctype_of e1) then
                     (usual_arithmetic_conversion (ctype_of e1) (ctype_of e2) obj1_wrp.E.sym_pe obj2_wrp.E.sym_pe) in
                 Caux.add_std "§6.5.8#6" (
                   Caux.mk_pure_e (
-                    Caux.mk_if_pe_ [Annot.Anot_explode] (Caux.mk_op_pe real_bop promoted1_pe promoted2_pe)
+                    Caux.mk_if_pe (Caux.mk_op_pe real_bop promoted1_pe promoted2_pe)
                       (Caux.mk_specified_pe (Caux.mk_integer_pe 1))
                       (Caux.mk_specified_pe (Caux.mk_integer_pe 0))
                   )
@@ -470,7 +470,7 @@ else
                 Caux.mk_wseq_e memop_wrp.E.sym_pat (C.Expr [] (C.Ememop memop [obj1_wrp.E.sym_pe; obj2_wrp.E.sym_pe])) (
                   Caux.add_std "§6.5.8#6" (
                     Caux.mk_pure_e (
-                      Caux.mk_if_pe_ [Annot.Anot_explode] memop_wrp.E.sym_pe
+                      Caux.mk_if_pe memop_wrp.E.sym_pe
                         (Caux.mk_specified_pe (Caux.mk_integer_pe 1))
                         (Caux.mk_specified_pe (Caux.mk_integer_pe 0))
                     )
@@ -518,7 +518,7 @@ if    Aaux.is_null_pointer_constant e1 && AilTypesAux.is_pointer (ctype_of e2)
           , Caux.mk_wseq_e memop_wrp.E.sym_pat (Caux.mk_memop_e memop [obj_wrp.E.sym_pe; nullptr_pe]) begin
               Caux.add_std "§6.5.9#3" begin
                 Caux.mk_pure_e begin
-                  Caux.mk_if_pe_ [Annot.Anot_explode] memop_wrp.E.sym_pe
+                  Caux.mk_if_pe memop_wrp.E.sym_pe
                     (Caux.mk_specified_pe (Caux.mk_integer_pe 1))
                     (Caux.mk_specified_pe (Caux.mk_integer_pe 0))
                 end
@@ -556,7 +556,7 @@ if AilTypesAux.is_arithmetic (ctype_of e1) && AilTypesAux.is_arithmetic (ctype_o
                 Caux.mk_std_pair_pe "§6.5.9#4, sentence 1"
                   (usual_arithmetic_conversion (ctype_of e1) (ctype_of e2) obj1_wrp.E.sym_pe obj2_wrp.E.sym_pe) in
               Caux.mk_std_pe "§6.5.9#3" begin
-                Caux.mk_if_pe_ [Annot.Anot_explode] (Caux.mk_std_pe "§6.5.9#4, sentence 3" (mk_op_pe promoted1_pe promoted2_pe))
+                Caux.mk_if_pe (Caux.mk_std_pe "§6.5.9#4, sentence 3" (mk_op_pe promoted1_pe promoted2_pe))
                   (Caux.mk_specified_pe (Caux.mk_integer_pe 1))
                   (Caux.mk_specified_pe (Caux.mk_integer_pe 0))
               end )
@@ -578,7 +578,7 @@ else (* both operand have pointer type *)
           , Caux.mk_wseq_e memop_wrp.E.sym_pat (C.Expr [] (C.Ememop memop [obj1_wrp.E.sym_pe; obj2_wrp.E.sym_pe])) begin
               Caux.mk_pure_e begin
                 Caux.mk_std_pe "§6.5.9#3" begin
-                  Caux.mk_if_pe_ [Annot.Anot_explode] memop_wrp.E.sym_pe
+                  Caux.mk_if_pe memop_wrp.E.sym_pe
                     (Caux.mk_specified_pe (Caux.mk_integer_pe 1))
                     (Caux.mk_specified_pe (Caux.mk_integer_pe 0))
                 end
@@ -817,13 +817,14 @@ let translate_assignment_conversion translate_expr stdlib ty1 e2 =
 
 val translate_function_call:
   Loc.t ->
+  list Annot.annot ->
   bool -> (* is_used *)
   (A.expression GenTypes.genTypeCategory -> E.elabM (C.expr unit)) ->
   translation_stdlib ->
   A.expression GenTypes.genTypeCategory ->
   list (A.expression GenTypes.genTypeCategory) ->
   E.elabM (C.expr unit)
-let translate_function_call loc is_used translate_expr stdlib e es =
+let translate_function_call loc annots is_used translate_expr stdlib e es =
   (* TODO: is_used_pe is commented out because it requires some changes to CN to support it.
       But as a result currently a non-void function missing a return statement is deemed UB even when
       the value of the function call is NOT used by the caller. (which is explicitly excluded from the UB by the STD) *)
@@ -887,7 +888,7 @@ let translate_function_call loc is_used translate_expr stdlib e es =
     E.return
       ( n+1
       , (Caux.mk_let_e param_ty_wrp.E.sym_pat (stdlib.mkcall_params_nth params_wrp.E.sym_pe (Caux.mk_integer_pe n))
-        (Caux.mk_if_e_ [Annot.Anot_explode]
+        (Caux.mk_if_e_ []
           (Caux.mk_not_pe (Caux.mk_are_compatible expect_param_ty_pe param_ty_wrp.E.sym_pe))
           (Caux.mk_pure_e (Caux.mk_std_undef_pe loc "§6.5.2.2#9" Undefined.UB041_function_not_compatible))
           begin
@@ -938,7 +939,7 @@ let translate_function_call loc is_used translate_expr stdlib e es =
       E.return
         ( n+1
         , (Caux.mk_let_pe param_ty_wrp.E.sym_pat (stdlib.mkcall_params_nth params_wrp.E.sym_pe (Caux.mk_integer_pe n))
-          (Caux.mk_if_pe_ [Annot.Anot_explode]
+          (Caux.mk_if_pe
             (Caux.mk_not_pe (Caux.mk_are_compatible expect_param_ty_pe param_ty_wrp.E.sym_pe))
             (Caux.mk_std_undef_pe loc "§6.5.2.2#9" Undefined.UB041_function_not_compatible)
             begin
@@ -1013,12 +1014,12 @@ let translate_function_call loc is_used translate_expr stdlib e es =
       end
 begin if expect_is_variadic then
       (* check number of parameters *)
-      (Caux.mk_if_e_ [Annot.Anot_explode]
+      (Caux.mk_if_e_ []
         (Caux.mk_not_pe (Caux.mk_op_pe C.OpLe (stdlib.mkcall_params_length params_wrp.E.sym_pe)
                                               (Caux.mk_integer_pe (integerFromNat n_args))))
         (Caux.mk_pure_e (Caux.mk_std_undef_pe loc "§6.5.2.2#6, sentence 3" Undefined.UB038_number_of_args))
         (* check if function types are compatible *)
-        (Caux.mk_if_e_ [Annot.Anot_explode]
+        (Caux.mk_if_e_ []
           (Caux.mk_op_pe C.OpOr (Caux.mk_not_pe is_variadic_wrp.E.sym_pe)
                           (Caux.mk_not_pe (Caux.mk_are_compatible (Caux.mk_ail_ctype_pe expect_ret_ty) ret_wrp.E.sym_pe)))
           (Caux.mk_pure_e (Caux.mk_std_undef_pe loc "§6.5.2.2#9" Undefined.UB041_function_not_compatible))
@@ -1030,7 +1031,7 @@ match callconv with
             (List.zip varg_ptr_sym_pats (List.reverse rev_variadic_core_creates))
             (Caux.mk_sseq_e call_ret_wrp.E.sym_pat
               (* do the function call *)
-              (Caux.mk_ccall_e (Caux.mk_ail_ctype_pe (ctype_of e)) call_wrp.E.sym_pe
+              (Caux.mk_ccall_e_ annots (Caux.mk_ail_ctype_pe (ctype_of e)) call_wrp.E.sym_pe
                 (let (_, varg_ptr_sym_pes) = List.splitAt (List.length expect_params) arg_ptr_sym_pes in
                   let varargs_ty_pes =
                     List.map (fun (ty_pe, pe) -> Caux.mk_tuple_pe [ty_pe; pe])
@@ -1064,7 +1065,7 @@ match callconv with
             (List.zip arg_ptr_sym_pats (List.reverse rev_core_creates ++ List.reverse rev_variadic_core_creates))
             (Caux.mk_sseq_e call_ret_wrp.E.sym_pat
               (* do the function call *)
-              (Caux.mk_ccall_e (Caux.mk_ail_ctype_pe (ctype_of e)) call_wrp.E.sym_pe
+              (Caux.mk_ccall_e_ annots (Caux.mk_ail_ctype_pe (ctype_of e)) call_wrp.E.sym_pe
                 (let (arg_pes, vararg_pes) = List.splitAt (List.length expect_params) arg_ptr_sym_pes in
                   let varargs_ty_pes =
                     List.map (fun (ty_pe, pe) -> Caux.mk_tuple_pe [ty_pe; pe])
@@ -1090,24 +1091,24 @@ end
       )
 else
       (* check number of parameters *)
-      (Caux.mk_if_e_ [Annot.Anot_explode]
+      (Caux.mk_if_e_ []
         (Caux.mk_not_pe (Caux.mk_op_pe C.OpEq (stdlib.mkcall_params_length params_wrp.E.sym_pe)
                                               (Caux.mk_integer_pe (integerFromNat n_args))))
         (Caux.mk_pure_e (Caux.mk_std_undef_pe loc "§6.5.2.2#6, sentence 3" Undefined.UB038_number_of_args))
         (* check if function types are compatible *)
-        (Caux.mk_if_e_ [Annot.Anot_explode]
+        (Caux.mk_if_e_ []
           (Caux.mk_op_pe C.OpOr is_variadic_wrp.E.sym_pe
                           (Caux.mk_not_pe (Caux.mk_are_compatible (Caux.mk_ail_ctype_pe expect_ret_ty) ret_wrp.E.sym_pe)))
           (Caux.mk_pure_e (Caux.mk_std_undef_pe loc "§6.5.2.2#9" Undefined.UB041_function_not_compatible))
 match callconv with
 | C.Inner_arg_callconv ->
-          (Caux.mk_ccall_e (Caux.mk_ail_ctype_pe (ctype_of e)) call_wrp.E.sym_pe ((*is_used_pe :: *)List.reverse rev_cn_core_args))
+          (Caux.mk_ccall_e_ annots (Caux.mk_ail_ctype_pe (ctype_of e)) call_wrp.E.sym_pe ((*is_used_pe :: *)List.reverse rev_cn_core_args))
 | C.Normal_callconv ->
             (* create temporary object *)
             (Caux.mk_sseqs (List.zip arg_ptr_sym_pats (List.reverse rev_core_creates))
             (Caux.mk_sseq_e call_ret_wrp.E.sym_pat
               (* do the function call *)
-              (Caux.mk_ccall_e (Caux.mk_ail_ctype_pe (ctype_of e)) call_wrp.E.sym_pe
+              (Caux.mk_ccall_e_ annots (Caux.mk_ail_ctype_pe (ctype_of e)) call_wrp.E.sym_pe
               
               
             (
@@ -1433,22 +1434,22 @@ let rec translate_expression is_used ctx variadic_env stdlib tagDefs a_expr =
                     of the type of the operand with unsigned integer type, then the operand with unsigned integer
                     type is converted to the type of the operand with signed integer type." *)
                 else if AilTypesAux.is_signed_integer_type ty1' then
-                  (Caux.mk_if_pe_ [Annot.Anot_explode] (stdlib.mkcall_all_values_representable_in ty2' ty1')
+                  (Caux.mk_if_pe (stdlib.mkcall_all_values_representable_in ty2' ty1')
                      (mk_conv_int ity1' e1)
                      (* "Otherwise, both operands are converted to the unsigned integer type corresponding to the type
                          of the operand with signed integer type". *)
                      (mk_conv_int (AilTypesAux.make_corresponding_unsigned ity1') e1)
                   ,
-                  Caux.mk_if_pe_ [Annot.Anot_explode] (stdlib.mkcall_all_values_representable_in ty2' ty1')
+                  Caux.mk_if_pe (stdlib.mkcall_all_values_representable_in ty2' ty1')
                      (mk_conv_int ity1' e2)
                      (mk_conv_int (AilTypesAux.make_corresponding_unsigned ity1') e2)
                   )
                 else
-                  (Caux.mk_if_pe_ [Annot.Anot_explode] (stdlib.mkcall_all_values_representable_in ty1' ty2')
+                  (Caux.mk_if_pe (stdlib.mkcall_all_values_representable_in ty1' ty2')
                      (mk_conv_int ity2' e1)
                      (mk_conv_int (AilTypesAux.make_corresponding_unsigned ity2') e1)
                   ,
-                  Caux.mk_if_pe_ [Annot.Anot_explode] (stdlib.mkcall_all_values_representable_in ty1' ty2')
+                  Caux.mk_if_pe (stdlib.mkcall_all_values_representable_in ty1' ty2')
                      (mk_conv_int ity2' e2)
                      (mk_conv_int (AilTypesAux.make_corresponding_unsigned ity2') e2)
                   )
@@ -1615,7 +1616,7 @@ else match AilTypesAux.referenced_type (ctype_of e) with
                     , Caux.mk_wseq_e test_wrp.E.sym_pat
                         (Caux.mk_memop_e Mem_common.PtrValidForDeref [Caux.mk_ail_ctype_pe ref_ty; obj_wrp.E.sym_pe]) begin
                           Caux.mk_pure_e begin
-                            Caux.mk_if_pe_ [Annot.Anot_explode] test_wrp.E.sym_pe
+                            Caux.mk_if_pe test_wrp.E.sym_pe
                               obj_wrp.E.sym_pe
                               (Caux.mk_std_undef_pe loc "§6.5.3.3#4, sentence 4" Undefined.UB043_indirection_invalid_value)
                           end
@@ -1667,10 +1668,10 @@ end
                         (Caux.mk_let_pe promoted2_wrp.E.sym_pat
                           (Caux.mk_std_pe "§6.5.7#3, sentence 1" promoted2_def)
                         (* (§6.5.7#2) if promoted2 < 0 then undef *)
-                        (Caux.mk_if_pe_ [Annot.Anot_explode] (Caux.mk_op_pe C.OpLt promoted2_wrp.E.sym_pe (Caux.mk_integer_pe 0))
+                        (Caux.mk_if_pe (Caux.mk_op_pe C.OpLt promoted2_wrp.E.sym_pe (Caux.mk_integer_pe 0))
                           (Caux.mk_std_undef_pe loc "§6.5.7#3, sentence 3" Undefined.UB051a_negative_shift)
                         (* ctype_width(result_ty) <= promoted2 *)
-                        (Caux.mk_if_pe_ [Annot.Anot_explode] (Caux.mk_op_pe C.OpOr 
+                        (Caux.mk_if_pe (Caux.mk_op_pe C.OpOr 
                               (Caux.mk_op_pe C.OpLt (Caux.annotate_integer_type_pexpr promoted2_ity (stdlib.mkcall_ctype_width result_ty)) promoted2_wrp.E.sym_pe)
                               (Caux.mk_op_pe C.OpEq (Caux.annotate_integer_type_pexpr promoted2_ity (stdlib.mkcall_ctype_width result_ty)) promoted2_wrp.E.sym_pe))
                           (Caux.mk_std_undef_pe loc "§6.5.7#4, sentence 3" Undefined.UB51b_shift_too_large)
@@ -1700,14 +1701,14 @@ if is_unsigned_shift then
       end
 else
                         Caux.mk_std_pe "§6.5.7#4, sentence 3"
-                          (Caux.mk_if_pe_ [Annot.Anot_explode] (Caux.mk_op_pe C.OpLt promoted1_wrp.E.sym_pe (Caux.mk_integer_pe 0))
+                          (Caux.mk_if_pe (Caux.mk_op_pe C.OpLt promoted1_wrp.E.sym_pe (Caux.mk_integer_pe 0))
                             (Caux.mk_std_undef_pe loc "§6.5.7#3, sentence 3" Undefined.UB052a_negative_left_shift)
   begin if Global.backend_name () = "Cn" then
                           Caux.mk_specified_pe (Caux.mk_catch_exceptional_condition_pe result_ity C.IOpShl promoted1_wrp.E.sym_pe promoted2_wrp.E.sym_pe)
   else
                           (Caux.mk_let_pe res_wrp.E.sym_pat
                             (Caux.mk_op_pe C.OpMul promoted1_wrp.E.sym_pe (Caux.mk_op_pe C.OpExp (Caux.mk_integer_pe 2) promoted2_wrp.E.sym_pe))
-                          (Caux.mk_if_pe_ [Annot.Anot_explode] (stdlib.mkcall_is_representable res_wrp.E.sym_pe result_ty)
+                          (Caux.mk_if_pe (stdlib.mkcall_is_representable res_wrp.E.sym_pe result_ty)
     begin if Global.is_CHERI () && Ctype.is_ptr_t result_ty then
                           Caux.mk_specified_pe begin
                             Caux.mk_memop_pe Mem_common.CapAssignValue
@@ -1756,10 +1757,10 @@ end
                         Caux.mk_let_pe promoted1_wrp.E.sym_pat (integer_promotion (ctype_of e1) obj1_wrp.E.sym_pe)
                         (Caux.mk_let_pe promoted2_wrp.E.sym_pat promoted2_def
                         (* (§6.5.7#2) if promoted2 < 0 then undef *)
-                        (Caux.mk_if_pe_ [Annot.Anot_explode] (Caux.mk_op_pe C.OpLt promoted2_wrp.E.sym_pe (Caux.mk_integer_pe 0))
+                        (Caux.mk_if_pe (Caux.mk_op_pe C.OpLt promoted2_wrp.E.sym_pe (Caux.mk_integer_pe 0))
                           (Caux.mk_std_undef_pe loc "§6.5.7#3, sentence 3" Undefined.UB051a_negative_shift)
                         (* ctype_width(result_ty) <= promoted2 *)
-                        (Caux.mk_if_pe_ [Annot.Anot_explode] (Caux.mk_op_pe C.OpOr 
+                        (Caux.mk_if_pe (Caux.mk_op_pe C.OpOr 
                                   (Caux.mk_op_pe C.OpLt (Caux.annotate_integer_type_pexpr promoted2_ity (stdlib.mkcall_ctype_width result_ty)) promoted2_wrp.E.sym_pe)
                                   (Caux.mk_op_pe C.OpEq (Caux.annotate_integer_type_pexpr promoted2_ity (stdlib.mkcall_ctype_width result_ty)) promoted2_wrp.E.sym_pe))
                           (Caux.mk_std_undef_pe loc "§6.5.7#3, sentence 3" Undefined.UB51b_shift_too_large)
@@ -1790,7 +1791,7 @@ if AilTypesAux.is_unsigned_integer_type result_ty then
   end
 else
                                Caux.mk_std_pe "6.5.7#5, sentence 3" begin
-                                Caux.mk_if_pe_ [Annot.Anot_explode] (Caux.mk_op_pe C.OpGe promoted1_wrp.E.sym_pe (Caux.mk_integer_pe 0))
+                                Caux.mk_if_pe (Caux.mk_op_pe C.OpGe promoted1_wrp.E.sym_pe (Caux.mk_integer_pe 0))
   begin if Global.backend_name () = "Cn" then
                                   Caux.mk_catch_exceptional_condition_pe result_ity C.IOpShr promoted1_wrp.E.sym_pe promoted2_wrp.E.sym_pe
   else
@@ -1939,7 +1940,7 @@ else (* pointer <-> pointer cast *)
                         [ ( Caux.mk_specified_pat obj_wrp.E.sym_pat
                           , Caux.mk_wseq_e (Caux.mk_sym_pat let_sym C.BTy_boolean)
                               (C.Expr [] (C.Ememop Mem_common.PtrWellAligned [Caux.mk_ail_ctype_pe cast_ref_ty; obj_wrp.E.sym_pe]))
-                              (Caux.mk_pure_e (Caux.mk_specified_pe (Caux.mk_if_pe_ [Annot.Anot_explode] (Caux.mk_sym_pe let_sym) obj_wrp.E.sym_pe ub_pe))) )
+                              (Caux.mk_pure_e (Caux.mk_specified_pe (Caux.mk_if_pe (Caux.mk_sym_pe let_sym) obj_wrp.E.sym_pe ub_pe))) )
                         ; ( Caux.mk_unspecified_pat (Caux.mk_empty_pat C.BTy_ctype)
                           , (* we are being daemonic (case where the resulting pointer would be misaligned) *)
                             Caux.mk_pure_e ub_pe ) ]
@@ -2135,7 +2136,7 @@ else if AilTypesAux.is_pointer (ctype_of e1) && AilTypesAux.is_pointer (ctype_of
                         (C.Expr [] (C.Ememop Mem_common.Ptrdiff [diff_ty_pe; obj1_wrp.E.sym_pe; obj2_wrp.E.sym_pe]))
                         begin
                           Caux.mk_pure_e begin
-                            Caux.mk_if_pe_ [Annot.Anot_explode] (stdlib.mkcall_is_representable memop_wrp.E.sym_pe Ctype.ptrdiff_t)
+                            Caux.mk_if_pe (stdlib.mkcall_is_representable memop_wrp.E.sym_pe Ctype.ptrdiff_t)
                               (Caux.mk_specified_pe memop_wrp.E.sym_pe)
                               (Caux.mk_undef_pe loc Undefined.UB050_pointers_subtraction_not_representable)
                           end
@@ -2586,12 +2587,12 @@ end
               (Caux.mk_tuple_pat [ret_wrp.E.sym_pat; params_wrp.E.sym_pat; Caux.mk_empty_pat C.BTy_boolean; Caux.mk_empty_pat C.BTy_boolean])
               (Caux.mk_cfunction_pe fun_wrp.E.sym_pe)
               begin
-                Caux.mk_if_e_ [Annot.Anot_explode]
+                Caux.mk_if_e_ []
                   (Caux.mk_op_pe C.OpEq (stdlib.mkcall_params_length params_wrp.E.sym_pe) (Caux.mk_integer_pe 0))
                     begin
-                      Caux.mk_if_e_ [Annot.Anot_explode]
+                      Caux.mk_if_e_ []
                         (Caux.mk_are_compatible (Caux.mk_ail_ctype_pe ret_ty) ret_wrp.E.sym_pe)
-                          (Caux.mk_ccall_e (Caux.mk_ail_ctype_pe (ctype_of e)) fun_wrp.E.sym_pe [(*Caux.mk_boolean_pe is_used*)])
+                          (Caux.mk_ccall_e_ std_annots (Caux.mk_ail_ctype_pe (ctype_of e)) fun_wrp.E.sym_pe [(*Caux.mk_boolean_pe is_used*)])
                           (Caux.mk_pure_e (Caux.mk_std_undef_pe loc "§6.5.2.2#9" Undefined.UB041_function_not_compatible))
                     end
                     (Caux.mk_pure_e (Caux.mk_std_undef_pe loc "§6.5.2.2#6, sentence 3" Undefined.UB038_number_of_args))
@@ -2600,7 +2601,7 @@ end
           end
       
       | A.AilEcall e es ->
-          translate_function_call loc is_used self stdlib e es
+          translate_function_call loc std_annots is_used self stdlib e es
       
       | A.AilEassert e ->
           let oTy = force_core_object_type_of_ctype (ctype_of e) in
@@ -2619,7 +2620,7 @@ begin if AilTypesAux.is_arithmetic (ctype_of e) then
               Caux.mk_pure_e begin
                 Caux.mk_case_pe e_wrp.E.sym_pe
                   [ ( Caux.mk_specified_pat obj_wrp.E.sym_pat
-                    , Caux.mk_if_pe_ [Annot.Anot_explode] (Caux.mk_op_pe C.OpEq obj_wrp.E.sym_pe zero_pe)
+                    , Caux.mk_if_pe (Caux.mk_op_pe C.OpEq obj_wrp.E.sym_pe zero_pe)
                        (Caux.mk_error_pe "assert() failure" Caux.mk_unit_pe)
                       Caux.mk_unit_pe )
                   ; ( Caux.mk_empty_pat (C.BTy_loaded oTy)
@@ -2632,7 +2633,7 @@ else (* is_pointer *)
                      (Caux.mk_memop_e Mem_common.PtrEq [obj_wrp.E.sym_pe; Caux.mk_nullptr_pe Cty.void])
                      begin
                        Caux.mk_pure_e begin
-                         Caux.mk_if_pe_ [Annot.Anot_explode] memop_wrp.E.sym_pe
+                         Caux.mk_if_pe memop_wrp.E.sym_pe
                            (Caux.mk_error_pe "assert() failure" Caux.mk_unit_pe)
                            Caux.mk_unit_pe
                        end
@@ -2869,7 +2870,7 @@ end
                       else
                           begin
                             Caux.mk_pure_e begin
-                              Caux.mk_if_pe_ [Annot.Anot_explode] test_wrp.E.sym_pe
+                              Caux.mk_if_pe test_wrp.E.sym_pe
                                 (Caux.mk_member_shift_pe obj_wrp.E.sym_pe tag_sym ident)
                                 (Caux.mk_std_undef_pe loc "§6.5.2.3#4, sentence 4" Undefined.UB043_indirection_invalid_value)
                             end
@@ -3149,14 +3150,14 @@ type collect_cases_state = <|
 |>
 
 val     collect_cases_: A.statement GenTypes.genTypeCategory -> St.stateM unit collect_cases_state
-let rec collect_cases_ (A.AnnotatedStatement loc _ stmt) =
+let rec collect_cases_ stmt =
   let register_case n =
     St.update (fun s -> <| s with case_csts= n :: s.case_csts |>) in
   let register_case_range n1 n2 =
     St.update (fun s -> <| s with case_ranges= (n1, n2) :: s.case_ranges |>) in
   let register_default =
     St.update (fun s -> <| s with found_default= true |>) in
-  match stmt with
+  match stmt.A.node with
     | A.AilSskip ->
         St.return ()
     | A.AilSexpr _ ->
@@ -3212,18 +3213,19 @@ type erase_loop_control_state = <|
 |>
 
 val     erase_loop_control_aux: A.statement GenTypes.genTypeCategory -> St.stateM (A.statement GenTypes.genTypeCategory) erase_loop_control_state
-let rec erase_loop_control_aux (A.AnnotatedStatement loc attrs stmt_) =
+let rec erase_loop_control_aux stmt =
+  let loc = stmt.A.loc in
   let with_fresh_labels mf =
     fun st ->
       let continue_sym = Symbol.fresh_pretty_with_id (fun x -> "continue_" ^ show x) in
       let break_sym    = Symbol.fresh_pretty_with_id (fun x -> "break_" ^ show x) in
       let (ret, st')   = mf <| elc_continue= Just continue_sym; elc_break= Just break_sym |> in
       ((continue_sym, break_sym, ret), st) in 
-  A.AnnotatedStatement loc attrs <$> match stmt_ with
+  A.mk_statement_full loc stmt.A.is_forloop stmt.A.attrs <$> match stmt.A.node with
     | A.AilSskip ->
-        St.return stmt_
+        St.return stmt.A.node
     | A.AilSexpr _ ->
-        St.return stmt_
+        St.return stmt.A.node
     | A.AilSblock binds ss ->
         A.AilSblock binds <$> St.mapM erase_loop_control_aux ss
     | A.AilSif e s1 s2 ->
@@ -3233,9 +3235,9 @@ let rec erase_loop_control_aux (A.AnnotatedStatement loc attrs stmt_) =
         with_fresh_labels (erase_loop_control_aux s) >>= fun (continue_sym, break_sym, s') ->
         St.return begin
           A.AilSblock []
-            [ A.AnnotatedStatement loc Annot.no_attributes (A.AilSwhile e (A.AnnotatedStatement loc Annot.no_attributes (A.AilSblock []
-                [s'; A.AnnotatedStatement loc Annot.no_attributes (A.AilSlabel continue_sym (A.AnnotatedStatement loc Annot.no_attributes A.AilSskip) (Just (Annot.LAloop_continue loop_id)))])) loop_id)
-            ; A.AnnotatedStatement loc Annot.no_attributes (A.AilSlabel break_sym (A.AnnotatedStatement loc Annot.no_attributes A.AilSskip) (Just (Annot.LAloop_break loop_id))) ]
+            [ A.mk_statement loc (A.AilSwhile e (A.mk_statement loc (A.AilSblock []
+                [s'; A.mk_statement loc (A.AilSlabel continue_sym (A.mk_statement loc A.AilSskip) (Just (Annot.LAloop_continue loop_id)))])) loop_id)
+            ; A.mk_statement loc (A.AilSlabel break_sym (A.mk_statement loc A.AilSskip) (Just (Annot.LAloop_break loop_id))) ]
           end
 
     | A.AilSdo s e loop_id ->
@@ -3243,9 +3245,9 @@ let rec erase_loop_control_aux (A.AnnotatedStatement loc attrs stmt_) =
         with_fresh_labels (erase_loop_control_aux s) >>= fun (continue_sym, break_sym, s') ->
         St.return begin
           A.AilSblock []
-            [ A.AnnotatedStatement loc Annot.no_attributes (A.AilSdo (A.AnnotatedStatement loc Annot.no_attributes (A.AilSblock []
-                [s'; A.AnnotatedStatement loc Annot.no_attributes (A.AilSlabel continue_sym (A.AnnotatedStatement loc Annot.no_attributes A.AilSskip) (Just (Annot.LAloop_continue loop_id)))])) e loop_id)
-            ; A.AnnotatedStatement loc Annot.no_attributes (A.AilSlabel break_sym (A.AnnotatedStatement loc Annot.no_attributes A.AilSskip) (Just (Annot.LAloop_break loop_id))) ]
+            [ A.mk_statement loc (A.AilSdo (A.mk_statement loc (A.AilSblock []
+                [s'; A.mk_statement loc (A.AilSlabel continue_sym (A.mk_statement loc A.AilSskip) (Just (Annot.LAloop_continue loop_id)))])) e loop_id)
+            ; A.mk_statement loc (A.AilSlabel break_sym (A.mk_statement loc A.AilSskip) (Just (Annot.LAloop_break loop_id))) ]
           end
     | A.AilSbreak ->
         St.get >>= function
@@ -3262,16 +3264,16 @@ let rec erase_loop_control_aux (A.AnnotatedStatement loc attrs stmt_) =
               illTypedAil loc "AilScontinue"
         end
     | A.AilSreturnVoid ->
-        St.return stmt_
+        St.return stmt.A.node
     | A.AilSreturn _ ->
-        St.return stmt_
+        St.return stmt.A.node
     | A.AilSswitch e s ->
         with_fresh_labels (erase_loop_control_aux s) >>= fun (_, break_sym, s') ->
         St.return begin
           A.AilSblock []
-            [ A.AnnotatedStatement loc Annot.no_attributes (A.AilSswitch e (A.AnnotatedStatement loc Annot.no_attributes (A.AilSblock []
-                [ A.AnnotatedStatement loc Annot.no_attributes (A.AilSgoto break_sym); s' ])))
-            ; A.AnnotatedStatement loc Annot.no_attributes (A.AilSlabel break_sym (A.AnnotatedStatement loc Annot.no_attributes A.AilSskip) (Just Annot.LAswitch)) ]
+            [ A.mk_statement loc (A.AilSswitch e (A.mk_statement loc (A.AilSblock []
+                [ A.mk_statement loc (A.AilSgoto break_sym); s' ])))
+            ; A.mk_statement loc (A.AilSlabel break_sym (A.mk_statement loc A.AilSskip) (Just Annot.LAswitch)) ]
           end
     | A.AilScase n s ->
         A.AilScase n <$> erase_loop_control_aux s
@@ -3283,13 +3285,13 @@ let rec erase_loop_control_aux (A.AnnotatedStatement loc attrs stmt_) =
         erase_loop_control_aux s >>= fun s ->
         St.return (A.AilSlabel sym s m_loop_annot)
     | A.AilSgoto _ ->
-        St.return stmt_
+        St.return stmt.A.node
     | A.AilSdeclaration _ ->
-        St.return stmt_
+        St.return stmt.A.node
     | A.AilSpar ss ->
         A.AilSpar <$> St.mapM erase_loop_control_aux ss
     | A.AilSreg_store _ _ ->
-        St.return stmt_
+        St.return stmt.A.node
     | A.AilSmarker id s ->
         A.AilSmarker id <$> erase_loop_control_aux s
   end
@@ -3307,8 +3309,8 @@ type collect_visibles_state = <|
 |>
 
 val     collect_visibles_: A.statement GenTypes.genTypeCategory -> St.stateM unit collect_visibles_state
-let rec collect_visibles_ (A.AnnotatedStatement loc _ stmt) =
-  match stmt with
+let rec collect_visibles_ stmt =
+  match stmt.A.node with
     | A.AilSskip ->
         St.return ()
     | A.AilSexpr _ ->
@@ -3470,7 +3472,8 @@ val translate_stmt:
   A.statement GenTypes.genTypeCategory ->
   E.elabM (C.expr unit)
 
-let rec translate_stmt stdlib tagDefs f env (A.AnnotatedStatement loc stmt_attrs stmt) : E.elabM (C.expr unit) =
+let rec translate_stmt stdlib tagDefs f env stmt : E.elabM (C.expr unit) =
+  let loc = stmt.A.loc in
   let translate_expression is_used = wrapped_translate_expression is_used ECTX_other (env.variadic_sym_opt, env.last_arg_sym_opt) stdlib tagDefs in
   let translate_cases_block case_labs default_lab =
     translate_stmt stdlib tagDefs f <| env with case_labs=   case_labs;
@@ -3479,10 +3482,10 @@ let rec translate_stmt stdlib tagDefs f env (A.AnnotatedStatement loc stmt_attrs
   let self = translate_stmt stdlib tagDefs f env in
   let () = Debug.print_debug_located 1 [] loc (fun () ->
             "** TRANSLATING ** " ^
-            Pp.stringFromAil_statement (A.AnnotatedStatement loc stmt_attrs stmt)
+            Pp.stringFromAil_statement stmt
           ) in
-  (Caux.add_loc loc -| Caux.add_stmt -| Caux.add_attrs stmt_attrs) <$>
-  match stmt with
+  (Caux.add_loc loc -| Caux.add_stmt -| Caux.add_attrs stmt.A.attrs) <$>
+  match stmt.A.node with
     | A.AilSskip ->
         E.return Caux.mk_skip_e
     
@@ -3551,13 +3554,17 @@ let rec translate_stmt stdlib tagDefs f env (A.AnnotatedStatement loc stmt_attrs
             ( Caux.mk_sym_pat sym (C.BTy_object C.OTy_pointer)
             , Caux.pcreate (Loc.with_cursor_from loc ident_loc) align_ival c_ty (Symbol.PrefSource ident_loc [f; sym]) )
           ) decls_with_loc in
-        let cheri_const_intrinsic = List.map (fun (sym, (qs, ty, sym')) ->
-          (* TODO: the partial pattern match in the lets is tasteless (even though the memop()
-              never evaluates to an unspecified value) *)
-          let ptr_ty = Ctype.mk_ctype_pointer qs ty in
-          ( Caux.mk_specified_pat (Caux.mk_sym_pat sym' (C.BTy_object C.OTy_pointer))
-          , cheri_readonly_perms ptr_ty (Caux.mk_sym_pe sym) )
-        ) const_aliases in
+        let cheri_const_intrinsic =
+          if Global.is_CHERI () then
+            List.map (fun (sym, (qs, ty, sym')) ->
+            (* TODO: the partial pattern match in the lets is tasteless (even though the memop()
+                never evaluates to an unspecified value) *)
+            let ptr_ty = Ctype.mk_ctype_pointer qs ty in
+            ( Caux.mk_specified_pat (Caux.mk_sym_pat sym' (C.BTy_object C.OTy_pointer))
+            , cheri_readonly_perms ptr_ty (Caux.mk_sym_pe sym) )
+            ) const_aliases
+          else
+            [] in
         let pat_core_kills : list (C.expr unit) =
           List.map (fun (loc, _, sym, _, ty) ->
             Caux.pkill (Loc.with_cursor_from loc loc) (C.Static ty) (Caux.mk_sym_pe sym)
@@ -3594,7 +3601,7 @@ let rec translate_stmt stdlib tagDefs f env (A.AnnotatedStatement loc stmt_attrs
               Caux.mk_case_e test_wrp.E.sym_pe
                 [ ( Caux.mk_specified_pat case_wrp.E.sym_pat
                   , Caux.mk_pure_e begin
-                      Caux.mk_if_pe_ [Annot.Anot_explode] (Caux.mk_not_pe (Caux.mk_op_pe C.OpEq case_wrp.E.sym_pe (Caux.mk_integer_pe 1)))
+                      Caux.mk_if_pe (Caux.mk_not_pe (Caux.mk_op_pe C.OpEq case_wrp.E.sym_pe (Caux.mk_integer_pe 1)))
                         (Caux.mk_boolean_pe true) (Caux.mk_boolean_pe false)
                     end )
                   (* non-deterministic branching if the test expression had unspecified value *)
@@ -3629,7 +3636,7 @@ let rec translate_stmt stdlib tagDefs f env (A.AnnotatedStatement loc stmt_attrs
                 Caux.mk_case_e test_wrp.E.sym_pe
                   [ ( Caux.mk_specified_pat case_wrp.E.sym_pat
                     , Caux.mk_pure_e begin
-                        Caux.mk_if_pe_ [Annot.Anot_explode] (Caux.mk_not_pe (Caux.mk_op_pe C.OpEq case_wrp.E.sym_pe (Caux.mk_integer_pe 1)))
+                        Caux.mk_if_pe (Caux.mk_not_pe (Caux.mk_op_pe C.OpEq case_wrp.E.sym_pe (Caux.mk_integer_pe 1)))
                           (Caux.mk_boolean_pe true) (Caux.mk_boolean_pe false)
                       end )
                     (* non-deterministic branching if the test expression had unspecified value *)

@@ -1,8 +1,8 @@
 # Checking for required tools.
-ifeq (,$(shell which dune 2> /dev/null))
+ifeq (,$(shell command -v dune 2> /dev/null))
 $(error "Compilation requires [dune].")
 endif
-ifeq (,$(shell which lem 2> /dev/null))
+ifeq (,$(shell command -v lem 2> /dev/null))
 $(error "Compilation requires [lem].")
 endif
 
@@ -27,12 +27,12 @@ endif
 normal: cerberus
 
 .PHONY: all
-all: cerberus cerberus-bmc cerberus-web cn #rustic
+all: cerberus cerberus-bmc cerberus-web #rustic
 
 .PHONY: full-build
 full-build: prelude-src
 	@echo "[DUNE] full build"
-	$(Q)dune build $(DUNEFLAGS) 
+	$(Q)dune build $(DUNEFLAGS)
 
 .PHONY: util
 util:
@@ -55,7 +55,7 @@ sibylfs: sibylfs-src
 .PHONY: cerberus
 cerberus: prelude-src
 	@echo "[DUNE] cerberus"
-	$(Q)dune build $(DUNEFLAGS) cerberus.install
+	$(Q)dune build $(DUNEFLAGS) cerberus-lib.install cerberus.install
 
 .PHONY: test
 test: prelude-src
@@ -66,22 +66,16 @@ test: prelude-src
 bmc: cerberus-bmc
 cerberus-bmc: prelude-src
 	@echo "[DUNE] cerberus-bmc"
-	$(Q)dune build $(DUNEFLAGS) cerberus.install cerberus-bmc.install
+	$(Q)dune build $(DUNEFLAGS) cerberus-lib.install cerberus-bmc.install
 
-.PHONY: rustic
-rustic: prelude-src
-	@echo "[DUNE] $@"
-	$(Q)dune build $(DUNEFLAGS) cerberus.install rustic.install
-
-.PHONY: cn
-cn: prelude-src
-	@echo "[DUNE] $@"
-	$(Q)dune build $(DUNEFLAGS) cerberus.install cn.install
-	@echo "\nDONE"
+# .PHONY: rustic
+# rustic: prelude-src
+# 	@echo "[DUNE] $@"
+# 	$(Q)dune build $(DUNEFLAGS) cerberus.install rustic.install
 
 cheri: prelude-src
 	@echo "[DUNE] cerberus-cheri"
-	$(Q)dune build $(DUNEFLAGS) cerberus-cheri.install
+	$(Q)dune build $(DUNEFLAGS) cerberus-lib.install cerberus-cheri.install
 
 # combined goal to build both cerberus and cheri together as single dune run.
 # building them separately form makefile causes them to run two confilcting
@@ -89,7 +83,7 @@ cheri: prelude-src
 .PHONY: cerberus-with-cheri
 cerberus-with-cheri: prelude-src
 	@echo "[DUNE] cerberus-with-cheri"
-	$(Q)dune build $(DUNEFLAGS) cerberus.install cerberus-cheri.install
+	$(Q)dune build $(DUNEFLAGS) cerberus-lib.install cerberus.install cerberus-cheri.install
 
 # .PHONY: cerberus-ocaml ocaml
 # ocaml: cerberus-ocaml
@@ -121,7 +115,7 @@ config.json: tools/config.json
 web: cerberus-web
 cerberus-web: prelude-src config.json tmp/
 	@echo "[DUNE] web"
-	$(Q)dune build $(DUNEFLAGS) cerberus.install cerberus-web.install
+	$(Q)dune build $(DUNEFLAGS) cerberus-lib.install cerberus.install cerberus-web.install
 #	@cp -L _build/default/backend/web/instance.exe webcerb.concrete
 #	@cp -L _build/default/backend/web/instance_symbolic.exe webcerb.symbolic
 #	@cp -L _build/default/backend/web/instance_vip.exe webcerb.vip
@@ -164,7 +158,7 @@ LEM_CONC          = cmm_csem.lem cmm_op.lem linux.lem
 LEM_CN            = cn.lem cn_desugaring.lem
 
 LEM_SRC_AUX       = $(LEM_PRELUDE) \
-										$(LEM_CN) \
+                    $(LEM_CN) \
                     $(LEM_CABS) \
                     $(addprefix ail/, $(LEM_AIL)) \
                     $(LEM_CTYPE_AUX) \
@@ -288,49 +282,27 @@ clean:
 distclean: clean clean-prelude-src clean-sibylfs-src
 	$(Q)rm -rf tmp config.json
 
+.PHONY: cerberus-lib
+cerberus-lib:
+	@echo "[DUNE] cerberus-lib"
+	$(Q)dune build -p cerberus-lib
+
+.PHONY: install_lib
+install_lib: cerberus-lib
+	@echo "[DUNE] install cerberus-lib"
+	$(Q)dune install cerberus-lib
+
 .PHONY: install
-install: cerberus
+install: install_lib cerberus
 	@echo "[DUNE] install cerberus"
 	$(Q)dune install cerberus
 
 .PHONY: install-cheri
-install-cheri:
+install-cheri: install_lib
 	@echo "[DUNE] install cerberus-cheri"
 	$(Q)dune install cerberus-cheri
-
-.PHONY: install_cn
-install_cn: install cn
-	@echo "[DUNE] install cn"
-	$(Q)dune install cn
 
 .PHONY: uninstall
 uninstall: cerberus
 	@echo "[DUNE] uninstall cerberus"
 	$(Q)dune uninstall cerberus
-
-.PHONY: uninstall_cn
-uninstall_cn: cn
-	@echo "[DUNE] uninstall cn"
-	$(Q)dune uninstall cn
-
-.PHONY: cn-coq
-cn-coq:
-	@echo "[DUNE] cn-coq"
-	$(Q)dune build -p cn-coq
-
-.PHONY: cn-coq-install
-cn-coq-install: cn-coq
-	@echo "[DUNE] install cn-coq"
-	$(Q)dune install cn-coq
-
-.PHONY: cn-with-coq
-cn-with-coq:
-	@echo "[DUNE] cerberus-lib,cn,cn-coq"
-	$(Q)dune build -p cerberus-lib,cn,cn-coq
-
-# Developement target to watch for changes in cn/lib and rebuild
-# e.g. to be used with vscode IDE
-.PHONY: cn-dev-watch
-cn-dev-watch:
-	@echo "[DUNE] cn-dev-watch"
-	$(Q)dune build --watch -p cerberus-lib,cn,cn-coq

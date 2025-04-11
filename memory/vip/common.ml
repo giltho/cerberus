@@ -5,7 +5,7 @@ open Ctype
 let ident_equal x y =
   Symbol.instance_Basic_classes_Eq_Symbol_identifier_dict.isEqual_method x y
 
-let rec offsetsof tagDefs tag_sym =
+let rec offsetsof ?(ignore_flexible=false) tagDefs tag_sym =
   match Pmap.find tag_sym tagDefs with
     | _, StructDef (membrs_, flexible_opt) ->
         (* NOTE: the offset of a flexible array member is just like
@@ -14,7 +14,10 @@ let rec offsetsof tagDefs tag_sym =
           | None ->
               membrs_
           | Some (FlexibleArrayMember (attrs, ident, qs, ty)) ->
-              membrs_ @ [(ident, (attrs, None, qs, ty))] in
+              if ignore_flexible then
+                membrs_
+              else
+                membrs_ @ [(ident, (attrs, None, qs, ty))] in
         let (xs, maxoffset) =
           List.fold_left (fun (xs, last_offset) (membr, (_, align_opt, _, ty)) ->
             let size = sizeof ~tagDefs ty in
@@ -37,8 +40,6 @@ let rec offsetsof tagDefs tag_sym =
 and sizeof ?(tagDefs= Tags.tagDefs ()) (Ctype (_, ty) as cty) =
   match ty with
     | Void | Array (_, None) | Function _ | FunctionNoParams _ ->
-        Printf.fprintf stderr "Common.sizeof ==> ty: %s\n"
-          (String_core_ctype.string_of_ctype cty);
         assert false
     | Basic (Integer ity) ->
         begin match (Ocaml_implementation.get ()).sizeof_ity ity with
@@ -67,9 +68,12 @@ and sizeof ?(tagDefs= Tags.tagDefs ()) (Ctype (_, ty) as cty) =
     | Atomic atom_ty ->
         sizeof ~tagDefs atom_ty
     | Struct tag_sym ->
-        (* TODO: need to add trailing padding for structs with a flexible array member *)
-        Cerb_debug.warn [] (fun () -> "TODO: Concrete.sizeof doesn't add trailing padding for structs with a flexible array member");
-        let (_, max_offset) = offsetsof tagDefs tag_sym in
+        (* NOTE: the potential flexible array member indirectly take part in the size
+           by potentially introducing trailling padding bytes if its presence increases
+           the alignment requirement. This is done by the call the to alignof here.
+           But other than for these padding bytes, it is not counted in the size
+           (hence the `ignore_flexible` in the call to offsetof) *)
+        let (_, max_offset) = offsetsof ~ignore_flexible:true tagDefs tag_sym in
         let align = alignof ~tagDefs cty in
         let x = max_offset mod align in
         if x = 0 then max_offset else max_offset + (align - x)
@@ -181,6 +185,10 @@ let ity_max ity =
           sub (pow_int (of_int 2) (8*n-1)) (of_int 1) in
         let unsigned_max =
           sub (pow_int (of_int 2) (8*n)) (of_int 1) in
+        let ity = match ity with
+          | Enum nm -> (Ocaml_implementation.get ()).typeof_enum nm
+          | _ -> ity
+        in
         begin match ity with
           | Char ->
               if (Ocaml_implementation.get ()).is_signed_ity Char then
@@ -200,15 +208,18 @@ let ity_max ity =
               signed_max
           |  Ptraddr_t ->
               unsigned_max
-          | Enum _ ->
-              (* TODO: hack, assuming like int *)
-              sub (pow_int (of_int 2) (8*4-1)) (of_int 1)
+          | Enum nm ->
+              assert false
         end
     | None ->
         failwith "the VIP memory model requires a complete implementation MAX"
 
 let ity_min ity =
   let open Nat_big_num in
+  let ity = match ity with
+    | Enum nm -> (Ocaml_implementation.get ()).typeof_enum nm
+    | _ -> ity
+  in
   match ity with
     | Char ->
         if (Ocaml_implementation.get ()).is_signed_ity Char then
@@ -233,5 +244,4 @@ let ity_min ity =
         end
     | Ptraddr_t -> zero
     | Enum _ ->
-        (* TODO: hack, assuming like int *)
-        negate (pow_int (of_int 2) (8*4-1))
+        assert false

@@ -1,6 +1,5 @@
 open Cerb_frontend
 open Cerb_backend
-open Cerb_runtime
 open Cerb_util
 open Instance_api
 open Pipeline
@@ -44,6 +43,7 @@ let setup conf =
                            then conf.cpp_cmd ^ " -DCERB_WITH_LIB"
                            else conf.cpp_cmd);
       cpp_stderr=         false;
+      cpp_save=           None;
     }
   in { pipeline= pipeline_conf;
        io= dummy_io;
@@ -124,7 +124,7 @@ let pp_core core =
       let show_include = false
       let show_locations = false
       let handle_location c_loc core_range =
-        match Cerb_location.to_cartesian c_loc with
+        match Cerb_location.to_cartesian_raw c_loc with
         | Some c_range ->
           locs := (c_range, core_range)::!locs
         | None -> ()
@@ -216,7 +216,7 @@ let execute ~conf ~filename (mode: Cerb_global.execution_mode) =
     elaborate ~is_bmc:false ~conf ~filename
     >>= fun (core_std, core_lib, cabs, ail, core) ->
     begin if conf.instance.link_libc then
-      Pipeline.read_core_object (conf.pipeline, conf.io) ~is_lib:true (core_std, core_lib) @@ in_runtime "libc/libc.co" >>= fun libc ->
+      Pipeline.read_core_object (conf.pipeline, conf.io) ~is_lib:true (core_std, core_lib) @@ Cerb_runtime.in_runtime "libc/libc.co" >>= fun libc ->
       Core_linking.link [core; libc]
     else
       return core
@@ -625,7 +625,7 @@ let step ~conf ~filename (active_node_opt: Instance_api.active_node option) =
     let core     = set_uid core in
     let ranges   = create_expr_range_list core in
     begin if conf.instance.link_libc then
-      Pipeline.read_core_object (conf.pipeline, conf.io) ~is_lib:true (core_std, core_lib) @@ in_runtime "libc/libc.co" >>= fun libc ->
+      Pipeline.read_core_object (conf.pipeline, conf.io) ~is_lib:true (core_std, core_lib) @@ Cerb_runtime.in_runtime "libc/libc.co" >>= fun libc ->
       Core_linking.link [core; libc]
     else
       return core

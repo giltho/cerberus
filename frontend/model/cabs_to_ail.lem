@@ -1762,7 +1762,7 @@ and register_enumerators tag_loc tag_sym enums =
     end >>= fun () ->
     let d_e =
       AilEannot Ctype.signed_int (
-        AnnotatedExpression () ["§6.7.2.2#3"] loc (
+        AnnotatedExpression () [Annot.Astd "§6.7.2.2#3"] loc (
           AilEconst (ConstantInteger (IConstant n Decimal Nothing))
         )
       ) in
@@ -2223,9 +2223,9 @@ and desugar_declarator fundef (Declarator ptr_decltor_opt ddecltor) =
 
 (* val     desugar_expression: cabs_expression -> E.desugM (expression unit) *)
 and desugar_expression (CabsExpression loc expr) =
-  AnnotatedExpression () [] loc <$>
   match expr with
     | CabsEident ident ->
+        AnnotatedExpression () [] loc <$>
         let (Symbol.Identifier _ str) = ident in (* DEBUG *)
         E.print_debugM 2 (fun () -> "DESUGARING, CabsEident: " ^ str) >>= fun () -> (* DEBUG *)
 STD_ "§6.5.1#2" $
@@ -2266,195 +2266,220 @@ STD_ "§6.5.1#2" $
         end
     
     | CabsEconst cst ->
-        AilEconst <$> desugar_cabs_constant loc cst
+        AnnotatedExpression () [] loc <$> (AilEconst <$> desugar_cabs_constant loc cst)
     | CabsEstring lit ->
-        E.return (AilEstr $ translate_cabs_string_literal lit)
+        AnnotatedExpression () [] loc <$> E.return (AilEstr $ translate_cabs_string_literal lit)
     | CabsEgeneric e gas ->
-        AilEgeneric <$> desugar_expression e
-                    <*> E.mapM desugar_generic_association gas
+        AnnotatedExpression () [] loc <$>
+          (AilEgeneric <$> desugar_expression e
+                       <*> E.mapM desugar_generic_association gas)
     
     | CabsEsubscript e1 e2 ->
+        AnnotatedExpression () [] loc <$> (
 STD_ "§6.5.2.1#2, sentence 2" $
-        AilEunary Indirection <$> (
-          AnnotatedExpression () [] loc <$>
-          (AilEbinary <$> desugar_expression e1
-                      <*> E.return (Arithmetic Add)
-                      <*> desugar_expression e2)
-        )
-    | CabsEcall e es ->
+          AilEunary Indirection <$> (
+            AnnotatedExpression () [] loc <$>
+            (AilEbinary <$> desugar_expression e1
+                        <*> E.return (Arithmetic Add)
+                        <*> desugar_expression e2)))
+    | CabsEcall e es attrs ->
         (* TODO: STD check + annot *)
-        AilEcall <$> desugar_expression e <*> E.mapM desugar_expression es
+        AnnotatedExpression () [Annot.Aattrs attrs] loc <$>
+          (AilEcall <$> desugar_expression e <*> E.mapM desugar_expression es)
     | CabsEmemberof e ident ->
         (* NOTE: we don't desugar the field name here because we need to know the type of [e] ... *)
-        AilEmemberof <$> desugar_expression e <*> (E.return ident)
+        AnnotatedExpression () [] loc <$>
+          (AilEmemberof <$> desugar_expression e <*> (E.return ident))
     | CabsEmemberofptr e ident ->
         (* NOTE: we don't desugar the field name here because we need to know the type of [e] ... *)
-        AilEmemberofptr <$> desugar_expression e <*> (E.return ident)
+        AnnotatedExpression () [] loc <$>
+          (AilEmemberofptr <$> desugar_expression e <*> (E.return ident))
     | CabsEpostincr e ->
-        AilEunary PostfixIncr <$> desugar_expression e
+        AnnotatedExpression () [] loc <$>
+          (AilEunary PostfixIncr <$> desugar_expression e)
     | CabsEpostdecr e ->
-        AilEunary PostfixDecr <$> desugar_expression e
+        AnnotatedExpression () [] loc <$>
+          (AilEunary PostfixDecr <$> desugar_expression e)
     | CabsEcompound tyname inits ->
-        desugar_type_name tyname >>= fun (qs, ty)    ->
-        E.is_inside_function     >>= fun inside_func ->
-        (* NOTE: there is no need to do the check for STD §6.7.9#3 here, because of the ail typing *)
-        wip_desugar_initializer_ loc (if inside_func then Automatic else Static) ty (Init_list loc inits) >>= fun (ty', d_e) ->
-        E.return (AilEcompound qs ty' d_e)
+        AnnotatedExpression () [] loc <$>
+          (desugar_type_name tyname >>= fun (qs, ty)    ->
+          E.is_inside_function     >>= fun inside_func ->
+          (* NOTE: there is no need to do the check for STD §6.7.9#3 here, because of the ail typing *)
+          wip_desugar_initializer_ loc (if inside_func then Automatic else Static) ty (Init_list loc inits) >>= fun (ty', d_e) ->
+          E.return (AilEcompound qs ty' d_e))
     | CabsEpreincr e ->
-STD_ "§6.5.3.1#2, sentence 3" $
+        AnnotatedExpression () [] loc <$>
+(STD_ "§6.5.3.1#2, sentence 3" $
 (*
-        desugar_expression e >>= fun d_e ->
-        E.return $ AilEcompoundAssign d_e Add oneAil
+          desugar_expression e >>= fun d_e ->
+          E.return $ AilEcompoundAssign d_e Add oneAil
 *)
-        (* TODO: temporary hack, while the elab doesn't support compound assigns *)
-        desugar_expression e >>= fun d_e ->
-        E.return $ AilEassign d_e (AnnotatedExpression () [] loc (AilEbinary d_e (Arithmetic Add) oneAil))
+          (* TODO: temporary hack, while the elab doesn't support compound assigns *)
+          desugar_expression e >>= fun d_e ->
+          E.return $ AilEassign d_e (AnnotatedExpression () [] loc (AilEbinary d_e (Arithmetic Add) oneAil)))
     | CabsEpredecr e ->
-STD_ "§6.5.3.1#3" $
+        AnnotatedExpression () [] loc <$>
+(STD_ "§6.5.3.1#3" $
 (*
-        desugar_expression e >>= fun d_e ->
-        E.return $ AilEcompoundAssign d_e Sub oneAil
+          desugar_expression e >>= fun d_e ->
+          E.return $ AilEcompoundAssign d_e Sub oneAil
 *)
-        (* TODO: temporary hack, while the elab doesn't support compound assigns *)
-        desugar_expression e >>= fun d_e ->
-        E.return $ AilEassign d_e (AnnotatedExpression () [] loc (AilEbinary d_e (Arithmetic Sub) oneAil))
-
-      (* (§6.5.3.3#5) *)
+          (* TODO: temporary hack, while the elab doesn't support compound assigns *)
+          desugar_expression e >>= fun d_e ->
+          E.return $ AilEassign d_e (AnnotatedExpression () [] loc (AilEbinary d_e (Arithmetic Sub) oneAil)))
+          (* (§6.5.3.3#5) *)
     | CabsEunary CabsNot e ->
-        desugar_expression e >>= fun d_e ->
-        E.return $ AilEbinary zeroAil Eq d_e
-    
+        AnnotatedExpression () [] loc <$>
+          (desugar_expression e >>= fun d_e ->
+          E.return $ AilEbinary zeroAil Eq d_e)
     | CabsEunary uop e ->
-        desugar_expression e >>= fun d_e ->
-        E.return $ AilEunary (translate_unary_operator uop) d_e
+        AnnotatedExpression () [] loc <$>
+        (desugar_expression e >>= fun d_e ->
+        E.return $ AilEunary (translate_unary_operator uop) d_e)
     | CabsEsizeof_expr e ->
-        if Global.isAgnostic () then
-          E.fail loc (Errors.Desugar_NotYetSupported "sizeof(expr) in the implementation agnostic mode")
-          (* NOTE: use to be
-             AilEsizeof_expr <$> desugar_expression e
-           *)
-        else
-          desugar_expression e >>= fun d_e  ->
-          E.get_sigma_sofar    >>= fun sigm ->
-          E.get_gamma_sofar    >>= fun gamm ->
-          match ErrorMonad.runErrorMonad (GenTyping.annotate_expression (GenTyping.annotate_block Nothing) sigm gamm GenTyping.CTXsizeof d_e) with
-            | Left (loc, err) ->
-                E.fail_ailtyping loc err
-            | Right a_expr ->
-                (* TODO: this is fixing an integer implementation... *)
-                let (qs, ty) = Translation_aux.qualified_ctype_of a_expr in
-                E.return (AilEsizeof qs ty)
-          end
-    
+        AnnotatedExpression () [] loc <$>
+          if Global.isAgnostic () then
+            E.fail loc (Errors.Desugar_NotYetSupported "sizeof(expr) in the implementation agnostic mode")
+            (* NOTE: use to be
+               AilEsizeof_expr <$> desugar_expression e
+             *)
+          else
+            desugar_expression e >>= fun d_e  ->
+            E.get_sigma_sofar    >>= fun sigm ->
+            E.get_gamma_sofar    >>= fun gamm ->
+            match ErrorMonad.runErrorMonad (GenTyping.annotate_expression (GenTyping.annotate_block Nothing) sigm gamm GenTyping.CTXsizeof d_e) with
+              | Left (loc, err) ->
+                  E.fail_ailtyping loc err
+              | Right a_expr ->
+                  (* TODO: this is fixing an integer implementation... *)
+                  let (qs, ty) = Translation_aux.qualified_ctype_of a_expr in
+                  E.return (AilEsizeof qs ty)
+            end
     | CabsEsizeof_type tyname ->
         (* TODO: STD check + annot *)
-        desugar_type_name tyname >>= fun (qs, ty) ->
-        E.return $ AilEsizeof qs ty
+        AnnotatedExpression () [] loc <$>
+          (desugar_type_name tyname >>= fun (qs, ty) ->
+          E.return $ AilEsizeof qs ty)
     | CabsEalignof tyname ->
         (* TODO: STD check + annot *)
-        desugar_type_name tyname >>= fun (qs, ty) ->
-        E.return $ AilEalignof qs ty
+        AnnotatedExpression () [] loc <$>
+          (desugar_type_name tyname >>= fun (qs, ty) ->
+          E.return $ AilEalignof qs ty)
     | CabsEcast tyname e ->
-        (* TODO: check *)
-        desugar_type_name tyname >>= fun (qs, ty) ->
-        desugar_expression e     >>= fun d_e      ->
-        E.return (AilEcast qs ty d_e)
-    
+        AnnotatedExpression () [] loc <$>
+          (* TODO: check *)
+          (desugar_type_name tyname >>= fun (qs, ty) ->
+          desugar_expression e     >>= fun d_e      ->
+          E.return (AilEcast qs ty d_e))
     | CabsEbinary bop e1 e2 ->
-        AilEbinary <$> desugar_expression e1
-                   <*> E.return (translate_binary_operator bop)
-                   <*> desugar_expression e2
+        AnnotatedExpression () [] loc <$>
+          (AilEbinary <$> desugar_expression e1
+                      <*> E.return (translate_binary_operator bop)
+                      <*> desugar_expression e2)
     | CabsEcond e1 e2 e3 ->
-        AilEcond <$> desugar_expression e1
-                 <*> (Just <$> desugar_expression e2)
-                 <*> desugar_expression e3
+        AnnotatedExpression () [] loc <$>
+          (AilEcond <$> desugar_expression e1
+                    <*> (Just <$> desugar_expression e2)
+                    <*> desugar_expression e3)
     | CabsEassign aop e1 e2 ->
-        match translate_assignment_operator aop with
-          | Nothing  ->
-              AilEassign <$> desugar_expression e1
-                         <*> desugar_expression e2
-          | Just aop ->
-              desugar_expression e1 >>= fun d_e1 ->
-              desugar_expression e2 >>= fun d_e2 ->
-              E.return (AilEcompoundAssign d_e1 aop d_e2)
+        AnnotatedExpression () [] loc <$>
+          match translate_assignment_operator aop with
+            | Nothing  ->
+                AilEassign <$> desugar_expression e1
+                           <*> desugar_expression e2
+            | Just aop ->
+                desugar_expression e1 >>= fun d_e1 ->
+                desugar_expression e2 >>= fun d_e2 ->
+                E.return (AilEcompoundAssign d_e1 aop d_e2)
 (*
-              desugar_expression e1 >>= fun d_e1 ->
-              desugar_expression e2 >>= fun d_e2 ->
-              E.return $ AilEassign d_e1 (AnnotatedExpression () [] loc (AilEbinary d_e1 (Arithmetic aop) d_e2))
+                desugar_expression e1 >>= fun d_e1 ->
+                desugar_expression e2 >>= fun d_e2 ->
+                E.return $ AilEassign d_e1 (AnnotatedExpression () [] loc (AilEbinary d_e1 (Arithmetic aop) d_e2))
 *)
-        end 
+          end 
     | CabsEcomma e1 e2 ->
-        AilEbinary <$> desugar_expression e1
-                   <*> E.return Comma
-                   <*> desugar_expression e2
+        AnnotatedExpression () [] loc <$>
+          (AilEbinary <$> desugar_expression e1
+                      <*> E.return Comma
+                      <*> desugar_expression e2)
     | CabsEassert e ->
-        AilEassert <$> desugar_expression e
+        AnnotatedExpression () [] loc <$>
+            (AilEassert <$> desugar_expression e)
     | CabsEoffsetof tyname ident ->
+        AnnotatedExpression () [] loc <$>
         (* TODO: do something with the qualifiers? *)
-        desugar_type_name tyname >>= fun (qs, ty) ->
-        E.return (AilEoffsetof ty ident)
+          (desugar_type_name tyname >>= fun (qs, ty) ->
+          E.return (AilEoffsetof ty ident))
     | CabsEva_start e ident ->
-        desugar_expression e >>= fun d_e ->
-        desugar_expression
-          (CabsExpression (Loc.locOf ident) (CabsEident ident)) >>= function
-          | AnnotatedExpression _ _ _ (AilEident sym) ->
-              E.return (AilEva_start d_e sym)
-          | _ ->
-              (* TODO: is this a fatal error? *)
-              error "the second operand of va_start() was not paramN"
-        end
+        AnnotatedExpression () [] loc <$>
+          (desugar_expression e >>= fun d_e ->
+          desugar_expression
+            (CabsExpression (Loc.locOf ident) (CabsEident ident)) >>= function
+            | AnnotatedExpression _ _ _ (AilEident sym) ->
+                E.return (AilEva_start d_e sym)
+            | _ ->
+                (* TODO: is this a fatal error? *)
+                error "the second operand of va_start() was not paramN"
+          end)
     | CabsEva_copy e1 e2 ->
-        desugar_expression e1 >>= fun d_e1 ->
-        desugar_expression e2 >>= fun d_e2 ->
-        E.return (AilEva_copy d_e1 d_e2)
+        AnnotatedExpression () [] loc <$>
+          (desugar_expression e1 >>= fun d_e1 ->
+          desugar_expression e2 >>= fun d_e2 ->
+          E.return (AilEva_copy d_e1 d_e2))
     | CabsEva_arg e tyname ->
-        (* TODO: do something with the qualifiers? *)
-        desugar_expression e     >>= fun d_e      ->
-        desugar_type_name tyname >>= fun (qs, ty) ->
-        E.return (AilEva_arg d_e ty)
+        AnnotatedExpression () [] loc <$>
+          (* TODO: do something with the qualifiers? *)
+          (desugar_expression e     >>= fun d_e      ->
+          desugar_type_name tyname >>= fun (qs, ty) ->
+          E.return (AilEva_arg d_e ty))
     | CabsEva_end e ->
-        desugar_expression e     >>= fun d_e      ->
-        E.return (AilEva_end d_e)
+        AnnotatedExpression () [] loc <$>
+          (desugar_expression e     >>= fun d_e      ->
+          E.return (AilEva_end d_e))
     | CabsEprint_type e ->
-        AilEprint_type <$> desugar_expression e
+        AnnotatedExpression () [] loc <$> (AilEprint_type <$> desugar_expression e)
     | CabsEbmc_assume e ->
-        AilEbmc_assume <$> desugar_expression e
+        AnnotatedExpression () [] loc <$> (AilEbmc_assume <$> desugar_expression e)
     | CabsEgcc_statement ss ->
-        let ctx = <| cont_ident_opt= Nothing |> in
-        desugar_block_statement (desugar_statement_aux ctx) ss >>= fun (bs, d_ss) ->
-        E.return (AilEgcc_statement bs d_ss) 
+        AnnotatedExpression () [] loc <$>
+          (let ctx = <| cont_ident_opt= Nothing |> in
+          desugar_block_statement (desugar_statement_aux ctx) ss >>= fun (bs, d_ss) ->
+          E.return (AilEgcc_statement bs d_ss))
     | CabsEcondGNU e1 e3 ->
-        (* TODO: add extension warning *)
-        AilEcond
-          <$> desugar_expression e1
-          <*> E.return Nothing
-          <*> desugar_expression e3
+        AnnotatedExpression () [] loc <$>
+          (* TODO: add extension warning *)
+          (AilEcond
+            <$> desugar_expression e1
+            <*> E.return Nothing
+            <*> desugar_expression e3)
     | CabsEbuiltinGNU (GNUbuiltin_types_compatible_p tyname1 tyname2) ->
-        (* TODO: add extension warning *)
-        (* the GCC documentation says:
-            This built-in function returns 1 if the unqualified versions of the types type1
-            and type2 (which are types, not expressions) are compatible, 0 otherwise.
-            The result of this built-in function can be used in integer constant expressions. *)
-        desugar_type_name tyname1 >>= fun (_, ty1) ->
-        desugar_type_name tyname2 >>= fun (_, ty2) ->
-        if AilTypesAux.are_compatible (Ctype.no_qualifiers, ty1) (Ctype.no_qualifiers, ty2) then
-          E.return (AilEconst (ConstantInteger (IConstant 1 Decimal Nothing)))
-        else
-          E.return (AilEconst (ConstantInteger (IConstant 0 Octal Nothing)))
+        AnnotatedExpression () [] loc <$>
+          (* TODO: add extension warning *)
+          (* the GCC documentation says:
+              This built-in function returns 1 if the unqualified versions of the types type1
+              and type2 (which are types, not expressions) are compatible, 0 otherwise.
+              The result of this built-in function can be used in integer constant expressions. *)
+          (desugar_type_name tyname1 >>= fun (_, ty1) ->
+          desugar_type_name tyname2 >>= fun (_, ty2) ->
+          if AilTypesAux.are_compatible (Ctype.no_qualifiers, ty1) (Ctype.no_qualifiers, ty2) then
+            E.return (AilEconst (ConstantInteger (IConstant 1 Decimal Nothing)))
+          else
+            E.return (AilEconst (ConstantInteger (IConstant 0 Octal Nothing))))
     | CabsEbuiltinGNU (GNUbuiltin_choose_expr const_e e1 e2) ->
+        AnnotatedExpression () [] loc <$>
         (* TODO: add extension warning *)
-        desugar_expression const_e         >>= fun d_e ->
-        is_integer_constant_expression d_e >>= function
-          | false ->
-              E.constraint_violation (Loc.locOf const_e) GNUBuiltinChooseExprNotIntegerConstant
-          | true ->
-              evaluate_integer_constant_expression loc Nothing d_e >>= fun n ->
-              if n <> 0 then
-                desugar_expression e1
-              else
-                desugar_expression e2
-        end >>= fun (AnnotatedExpression _ _ _ expr_) ->
-        E.return expr_
+          (desugar_expression const_e         >>= fun d_e ->
+          is_integer_constant_expression d_e >>= function
+            | false ->
+                E.constraint_violation (Loc.locOf const_e) GNUBuiltinChooseExprNotIntegerConstant
+            | true ->
+                evaluate_integer_constant_expression loc Nothing d_e >>= fun n ->
+                if n <> 0 then
+                  desugar_expression e1
+                else
+                  desugar_expression e2
+          end >>= fun (AnnotatedExpression _ _ _ expr_) ->
+          E.return expr_)
   end
 
 and desugar_generic_association gas =
@@ -3600,21 +3625,21 @@ E.fresh_block_scope >>= fun scope ->
   (* this is removing unnecessary blocks and skips introduced by the desugared.
       TODO: check carefully that we don't remove source blocks *)
   let d_ss' =
-    List.foldr (fun z acc ->
-      match z with
-        | (CabsStatement _ _ CabsSnull, AnnotatedStatement _ _ AilSskip) ->
+    List.foldr (fun ((cabs_stmt, d_stmt) as z) acc ->
+      match (cabs_stmt, d_stmt.A.node) with
+        | (CabsStatement _ _ CabsSnull, AilSskip) ->
             (* this is the case of a block already present in the Cabs code. *)
             snd z :: acc
-        | (CabsStatement _ _ _, AnnotatedStatement _ attrs AilSskip) ->
-            if attrs = Annot.no_attributes then
+        | (CabsStatement _ _ _, AilSskip) ->
+            if d_stmt.A.attrs = Annot.no_attributes then
               acc
             else
               snd z :: acc
-        | (CabsStatement _ _ (CabsSblock _), AnnotatedStatement _ _ (AilSblock _ _)) ->
+        | (CabsStatement _ _ (CabsSblock _), AilSblock _ _) ->
             (* this is the case of a block already present in the Cabs code. *)
             snd z :: acc
-        | (_, AnnotatedStatement _ attrs (AilSblock [] xs)) ->
-            if attrs = Annot.no_attributes then
+        | (_, AilSblock [] xs) ->
+            if d_stmt.A.attrs = Annot.no_attributes then
               (* here a block with no local variables was introduced by the desugaring *)
               xs ++ acc
             else
@@ -3631,7 +3656,11 @@ E.fresh_block_scope >>= fun scope ->
 and desugar_statement_aux ctx (CabsStatement loc attrs stmt_) =
   let attrs_outer = attrs in
   let self = desugar_statement_aux ctx in
-  AnnotatedStatement loc attrs <$>
+  let is_forloop = match stmt_ with
+    | CabsSfor _ _ _ _ -> true
+    | _ -> false
+  end in
+  mk_statement_full loc is_forloop attrs <$>
     match stmt_ with
       | CabsSlabel ident s ->
           AilSlabel <$> E.resolve_label ident
@@ -3685,7 +3714,7 @@ and desugar_statement_aux ctx (CabsStatement loc attrs stmt_) =
           E.under_scope if_scope begin
             AilSif <$> desugar_expression e
                    <*> E.under_scope s1_scope (self s1)
-                   <*> maybe (E.return $ AnnotatedStatement loc Annot.no_attributes AilSskip)
+                   <*> maybe (E.return (mk_statement loc AilSskip))
                              (fun z -> E.fresh_block_scope >>= fun s2_scope ->
                                        E.under_scope s2_scope (self z))
                              s2_opt
@@ -3724,10 +3753,10 @@ and desugar_statement_aux ctx (CabsStatement loc attrs stmt_) =
             (* while (E) S  ==>  while (E) { S; cont: ;} *)
             E.return begin
                 AilSwhile d_e begin
-                  AnnotatedStatement loc Annot.no_attributes begin
+                  mk_statement loc begin
                     AilSblock [] [ d_s
-                                 ; AnnotatedStatement loc Annot.no_attributes
-                                     (AilSlabel cont_sym (AnnotatedStatement loc Annot.no_attributes AilSskip) (Just (Annot.LAloop_continue loop_id))) ]
+                                 ; mk_statement loc
+                                     (AilSlabel cont_sym (mk_statement loc AilSskip) (Just (Annot.LAloop_continue loop_id))) ]
                   end
                 end loop_id 
             end
@@ -3756,10 +3785,10 @@ and desugar_statement_aux ctx (CabsStatement loc attrs stmt_) =
             (* do S (E)  ==>  do { S; cont: ;} (E) *)
             E.return begin
                 AilSdo begin
-                  AnnotatedStatement loc Annot.no_attributes begin
+                  mk_statement loc begin
                     AilSblock [] [ d_s
-                                 ; AnnotatedStatement loc Annot.no_attributes
-                                     (AilSlabel cont_sym (AnnotatedStatement loc Annot.no_attributes AilSskip) (Just (Annot.LAloop_continue loop_id)))]
+                                 ; mk_statement loc
+                                     (AilSlabel cont_sym (mk_statement loc AilSskip) (Just (Annot.LAloop_continue loop_id)))]
                   end
                 end d_e loop_id
             end
@@ -3844,31 +3873,31 @@ and desugar_statement_aux ctx (CabsStatement loc attrs stmt_) =
                 | Just e3 ->
                     desugar_expression e3 >>= fun d_e3 ->
                     E.under_scope s_scope (desugar_statement_aux ctx' s) >>= fun d_s  ->
-                    let d_s_e3 = AnnotatedStatement Loc.unknown Annot.no_attributes $ AilSexpr d_e3 in
-                    E.return match d_s with
-                      | AnnotatedStatement loc' attrs (AilSblock bindings d_ss) ->
-                          AnnotatedStatement loc' attrs (
-                            AilSblock bindings (d_ss ++ [AnnotatedStatement loc Annot.no_attributes (AilSlabel cont_sym d_s_e3 loop_annot)])
+                    let d_s_e3 = mk_statement Loc.unknown (AilSexpr d_e3) in
+                    E.return match d_s.A.node with
+                      | AilSblock bindings d_ss ->
+                          mk_statement_full d_s.A.loc d_s.A.is_forloop d_s.A.attrs (
+                            AilSblock bindings (d_ss ++ [mk_statement loc (AilSlabel cont_sym d_s_e3 loop_annot)])
                           )
                       | _ ->
-                          AnnotatedStatement loc Annot.no_attributes (
-                            AilSblock [] [d_s; AnnotatedStatement loc Annot.no_attributes (AilSlabel cont_sym d_s_e3 loop_annot)]
+                          mk_statement loc (
+                            AilSblock [] [d_s; mk_statement loc (AilSlabel cont_sym d_s_e3 loop_annot)]
                           )
                     end
                 | Nothing ->
                     E.under_scope s_scope (desugar_statement_aux ctx' s) >>= fun d_s ->
                     E.return begin
-                      AnnotatedStatement loc Annot.no_attributes (
+                      mk_statement loc (
                         AilSblock [] [ d_s
-                                     ; AnnotatedStatement loc Annot.no_attributes (AilSlabel cont_sym (AnnotatedStatement loc Annot.no_attributes AilSskip) loop_annot) ]
+                                     ; mk_statement loc (AilSlabel cont_sym (mk_statement loc AilSskip) loop_annot) ]
                       )
                     end
               end >>= fun d_s_body ->
             (* TODO: this seems to put the attributes not on the while loop but the declaration part *)
               E.return begin
                 AilSblock bindings [
-                  AnnotatedStatement decl_loc Annot.no_attributes (AilSdeclaration sym_d_es);
-                  AnnotatedStatement loc Annot.no_attributes (AilSwhile d_e2 d_s_body loop_id)
+                  mk_statement decl_loc (AilSdeclaration sym_d_es);
+                  mk_statement loc (AilSwhile d_e2 d_s_body loop_id)
                 ]
               end
           )
@@ -3882,55 +3911,41 @@ and desugar_statement_aux ctx (CabsStatement loc attrs stmt_) =
           E.record_loop_attribute loop_id attrs (match e2_opt with Just e2 -> Loc.locOf e2 | Nothing -> Loc.unknown end) loc >>
           let ctx' =
             <| cont_ident_opt= Just cont_ident |> in
-          
+
+          (* this avoids introducing an unecessary block *)
+          let mk_d_s_body d_s_e3 stmt = match stmt.A.node with
+            | AilSblock bs d_ss ->
+                mk_statement_full stmt.A.loc stmt.A.is_forloop stmt.A.attrs (AilSblock bs (d_ss ++ [d_s_e3]))
+            | _ ->
+                mk_statement loc (AilSblock [] [stmt; d_s_e3])
+          end in
+
           (* NOTE: it is important that the expressions and the body are
              desugared in the order of the syntax *)
           E.fresh_block_scope >>= fun for_scope ->
           E.under_scope for_scope begin
             match fc_opt with
               | Just (FC_expr e1) ->
-                  (* for (E1; E2; E3) S ==> { E1; while(E2) { S'; cont: E3   } }  *)
-                  (* for (E1; E2; ) S   ==> { E1; while(E2) { S'; cont: skip } }  *)
+                  (* for (E1; E2; E3) S ==> { E1; while(E2) { S'; E3; } }  *)
+                  (* for (E1; E2; ) S   ==> { E1; while(E2) { S'      } }  *)
                   desugar_expression e1 >>= fun d_e1 ->
                   let d_s_e1 =
-                    AnnotatedStatement (Loc.locOf e1) Annot.no_attributes (AilSexpr d_e1) in
-                  let mk_d_s_body d_s_e3 = function
-                    | AnnotatedStatement loc attrs (AilSblock bs d_ss) ->
-                        AnnotatedStatement loc attrs (AilSblock bs (d_ss ++ [d_s_e3]))
-                    | d_s ->
-                        AnnotatedStatement loc Annot.no_attributes (AilSblock [] [d_s; d_s_e3])
-                  end in
+                    mk_statement (Loc.locOf e1) (AilSexpr d_e1) in
                   E.return begin
                     fun d_e2 d_s_e3 d_s ->
                       AilSblock [] [ d_s_e1
-                                   ; AnnotatedStatement loc Annot.no_attributes (AilSwhile d_e2 (mk_d_s_body d_s_e3 d_s) loop_id) ]
+                                   ; mk_statement loc (AilSwhile d_e2 (mk_d_s_body d_s_e3 d_s) loop_id) ]
                   end
               | Just (FC_decl _ (Declaration_base _ _ _)) ->
                   error "desugar_statement_aux: Just (FC_decl (Declaration_base _ _ _)), _)"
               | Just (FC_decl _ (Declaration_static_assert sa_decl)) ->
-                  (* for (_Static_assert(...); E2; E3) S ==> while(E2) { S'; cont: E3 } *)
-                  (* for (_Static_assert(...); E2; ) S ==> while(E2) { S'; cont: skip } *)
-                  desugar_and_register_static_assert_declaration sa_decl >>
-                  let mk_d_s_body d_s_e3 = function
-                    | AnnotatedStatement loc attrs (AilSblock bs d_ss) ->
-                        AnnotatedStatement loc attrs (AilSblock bs (d_ss ++ [d_s_e3]))
-                    | d_s ->
-                        AnnotatedStatement Loc.unknown Annot.no_attributes begin
-                          AilSblock [] [d_s; d_s_e3]
-                        end
-                  end in
+                  (* for (_Static_assert(...); E2; E3) S ==> while(E2) { S'; E3; } *)
+                  (* for (_Static_assert(...); E2; ) S   ==> while(E2) { S' } *)
+                  desugar_and_register_static_assert_declaration sa_decl >>= fun () ->
                   E.return (fun d_e2 d_s_e3 d_s -> AilSwhile d_e2 (mk_d_s_body d_s_e3 d_s) loop_id)
               | Nothing ->
                   (* for (; E2; E3) S ==> while(E2) { S'; cont: E3 } *)
                   (* for (; E2; ) S ==> while(E2) { S'; cont: skip } *)
-                  let mk_d_s_body d_s_e3 = function
-                    | AnnotatedStatement loc attrs (AilSblock bs d_ss) ->
-                        AnnotatedStatement loc attrs (AilSblock bs (d_ss ++ [d_s_e3]))
-                    | d_s ->
-                        AnnotatedStatement Loc.unknown Annot.no_attributes begin
-                          AilSblock [] [d_s; d_s_e3]
-                        end
-                  end in
                   E.return (fun d_e2 d_s_e3 d_s -> AilSwhile d_e2 (mk_d_s_body d_s_e3 d_s) loop_id)
             end >>= fun mk_for ->
             (* see (§6.8.5.3#2, second sentence) for the Nothing case *)
@@ -3940,15 +3955,15 @@ and desugar_statement_aux ctx (CabsStatement loc attrs stmt_) =
             match e3_opt with
               | Nothing ->
                   E.return begin
-                    AnnotatedStatement loc Annot.no_attributes (
-                      AilSlabel cont_sym (AnnotatedStatement loc Annot.no_attributes AilSskip) loop_annot
+                    mk_statement loc (
+                      AilSlabel cont_sym (mk_statement loc AilSskip) loop_annot
                     )
                   end
               | Just e3 ->
                   desugar_expression e3 >>= fun d_e3 ->
                   E.return begin
-                    AnnotatedStatement loc Annot.no_attributes (
-                      AilSlabel cont_sym (AnnotatedStatement (Loc.locOf e3) Annot.no_attributes (AilSexpr d_e3)) loop_annot
+                    mk_statement loc (
+                      AilSlabel cont_sym (mk_statement (Loc.locOf e3) (AilSexpr d_e3)) loop_annot
                     )
                   end
             end >>= fun d_s_e3 ->
@@ -3965,8 +3980,8 @@ and desugar_statement_aux ctx (CabsStatement loc attrs stmt_) =
             | Nothing ->
                 E.constraint_violation loc ContinueOutsideLoop
             | Just cont_ident ->
-                self (CabsStatement loc Annot.no_attributes (CabsSgoto cont_ident)) >>= fun (AnnotatedStatement _ _ stmt_) ->
-                E.return stmt_
+                self (CabsStatement loc Annot.no_attributes (CabsSgoto cont_ident)) >>= fun stmt ->
+                E.return stmt.A.node
           end
       
       | CabsSbreak ->
@@ -4177,6 +4192,19 @@ let desugar_maybe desugar_f o =
   | Nothing -> E.return Nothing
   end
 
+let cn_resolve_ordinary_id_other loc nm =
+  E.resolve_ordinary_identifier loc nm >>= function
+   | Just (_, E.OReg_other nm_sym _ _) ->
+       E.return nm_sym
+   | Just (_, E.OReg_enum_constant _) ->
+       E.fail loc (Errors.Desugar_CN (CNErr_unknown_c_identifier nm))
+   | Just (_, E.OReg_typedef _) ->
+       E.fail loc (Errors.Desugar_CN (CNErr_unknown_c_identifier nm))
+   | Nothing ->
+       E.fail loc (Errors.Desugar_CN (CNErr_unknown_c_identifier nm))
+  end
+
+
 let rec desugar_cn_expr (CNExpr loc expr_) =
   match expr_ with
     | CNExpr_const cst ->
@@ -4232,25 +4260,13 @@ let rec desugar_cn_expr (CNExpr loc expr_) =
     | CNExpr_membershift e Nothing memb ->
       desugar_cn_expr e >>= fun e ->
       E.return (CNExpr_membershift e Nothing memb)
-    | CNExpr_membershift e (Just struct_tag) memb ->
-      E.resolve_extraordinary_identifier struct_tag E.Namespace_tag >>= function
-          | Just (_, (tag_sym, _)) ->
-              desugar_cn_expr e >>= fun e ->
-              E.return (CNExpr_membershift e (Just tag_sym) memb)
-          | Nothing ->
-              E.fail loc (Errors.Desugar_CN CNErr_invalid_tag)
-      end
+    | CNExpr_membershift e ct memb ->
+      desugar_maybe desugar_type_name ct >>= fun ct_tup ->
+      let ct = Maybe.map (fun (_, ct) -> ct) ct_tup in
+      desugar_cn_expr e >>= fun e ->
+      E.return (CNExpr_membershift e ct memb)
     | CNExpr_addr nm ->
-       E.resolve_ordinary_identifier loc nm >>= function
-          | Just (_, E.OReg_other nm_sym _ _) ->
-              E.return (CNExpr_addr nm_sym)
-          | Just (_, E.OReg_enum_constant _) ->
-              E.fail loc (Errors.Desugar_CN (CNErr_unknown_c_identifier nm))
-          | Just (_, E.OReg_typedef _) ->
-              E.fail loc (Errors.Desugar_CN (CNErr_unknown_c_identifier nm))
-          | Nothing ->
-              E.fail loc (Errors.Desugar_CN (CNErr_unknown_c_identifier nm))
-      end
+        CNExpr_addr <$> cn_resolve_ordinary_id_other loc nm
     | CNExpr_cast ty e ->
         CNExpr_cast <$> desugar_cn_base_type loc ty
                     <*> desugar_cn_expr e
@@ -4502,24 +4518,10 @@ let desugar_and_register_cn_lemma lmma =
 (* copying and adjusting desugar_and_register_cn_lemma *)
 let desugar_and_register_cn_fun_spec spec =
   E.record_marker ()     >>= fun marker_id ->
-  let loc = Loc.locOf spec.cn_spec_name in
-  E.resolve_ordinary_identifier loc spec.cn_spec_name >>= function
-    | Just (_, E.OReg_other nm_sym _ _) ->
-        E.return nm_sym
-    | Just (_, E.OReg_enum_constant _) ->
-        E.fail loc (Errors.Desugar_CN (CNErr_unknown_c_identifier spec.cn_spec_name))
-    | Just (_, E.OReg_typedef _) ->
-        E.fail loc (Errors.Desugar_CN (CNErr_unknown_c_identifier spec.cn_spec_name))
-    | Nothing ->
-        E.fail loc (Errors.Desugar_CN (CNErr_unknown_c_identifier spec.cn_spec_name))
-  end
-  >>= fun fun_sym ->
-  E.register_cn_fun_spec spec.cn_spec_magic_loc loc fun_sym marker_id begin
-    E.mapM (desugar_cn_arg CN_vars) spec.cn_spec_args >>= fun args ->
-    desugar_cn_conditions spec.cn_spec_requires >>= fun requires ->
-    E.register_cn_ident CN_vars (Symbol.Identifier Loc.unknown "return") >>= fun rsym ->
-    desugar_cn_conditions spec.cn_spec_ensures >>= fun ensures ->
-    E.return (args, requires, ensures, rsym)
+  let loc = spec.cn_decl_loc in
+  cn_resolve_ordinary_id_other loc spec.cn_decl_name >>= fun fun_sym ->
+  E.register_cn_fun_spec loc fun_sym spec.cn_decl_name marker_id begin
+    E.return (spec.cn_decl_args, spec.cn_func_spec)
   end
 
 
@@ -4578,17 +4580,7 @@ let desugar_cn_statement (CN_statement loc stmt_) =
      E.mapM desugar_cn_expr args >>= fun args ->
      E.return (CN_apply l args)
   | CN_inline nms ->
-     CN_inline <$> E.mapM (fun nm ->
-       E.resolve_ordinary_identifier loc nm >>= function
-         | Just (_, E.OReg_other nm_sym _ _) ->
-           E.return nm_sym
-         | Just (_, E.OReg_enum_constant _) ->
-           E.fail loc (Errors.Desugar_CN (CNErr_unknown_c_identifier nm))
-         | Just (_, E.OReg_typedef _) ->
-           E.fail loc (Errors.Desugar_CN (CNErr_unknown_c_identifier nm))
-         | Nothing ->
-           E.fail loc (Errors.Desugar_CN (CNErr_unknown_c_identifier nm))
-         end) nms
+     CN_inline <$> E.mapM (cn_resolve_ordinary_id_other loc) nms
   | CN_print e ->
      desugar_cn_expr e >>= fun e ->
      E.return (CN_print e)

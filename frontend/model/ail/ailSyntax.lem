@@ -1,5 +1,6 @@
 open import Pervasives Loc Ctype
 import Symbol Annot Cn
+import Cabs (* for cn_desugaring_state.cn_decl_spec *)
 
 type ail_identifier = Symbol.sym
 
@@ -186,7 +187,7 @@ and generic_association 'a =
   | AilGAdefault of expression 'a
 
 and expression 'a [name = "e*"] =
-  | AnnotatedExpression of 'a * list string * Loc.t * expression_ 'a
+  | AnnotatedExpression of 'a * list Annot.annot * Loc.t * expression_ 'a
 
 and statement_ 'a [name="s*"] =
   | AilSskip
@@ -210,8 +211,18 @@ and statement_ 'a [name="s*"] =
   | AilSreg_store of reg * expression 'a
 (* for CN *)
   | AilSmarker of nat * statement 'a (* NOTE: this is placeholder we used to carry annotations for CN *)
-and statement 'a [name="s*"] =
-  | AnnotatedStatement of Loc.t * Annot.attributes * statement_ 'a
+and statement 'a [name="s*"] = <|
+  loc: Loc.t;
+  is_forloop: bool; (* whether this Ail statement is the desugaring of a for loop *)
+  attrs: Annot.attributes;
+  node: statement_ 'a;
+|>
+
+let mk_statement loc node =
+  <| loc= loc; is_forloop= false; attrs= Annot.no_attributes; node= node |>
+
+let mk_statement_full loc is_forloop attrs node =
+  <| loc= loc; is_forloop= is_forloop; attrs= attrs; node= node |>
 
 instance forall 'a. (Located (expression 'a))
   let locOf a_expr =
@@ -221,8 +232,7 @@ end
 
 instance forall 'a. (Located (statement 'a))
   let locOf stmt =
-    let (AnnotatedStatement loc _ _) = stmt in
-    loc
+    stmt.loc
 end
 
 type declaration =
@@ -265,7 +275,7 @@ type sigma_cn_predicate = Cn.cn_predicate Symbol.sym Ctype.ctype
 
 type sigma_cn_datatype = Cn.cn_datatype Symbol.sym
 
-type sigma_cn_fun_spec  = nat * Cn.cn_fun_spec Symbol.sym Ctype.ctype
+type sigma_cn_decl_spec  = nat * Symbol.sym * Cn.cn_decl_spec Symbol.identifier Cabs.type_name
 
 type sigma_cn_ident = Cn.cn_namespace * Symbol.identifier
 
@@ -283,7 +293,7 @@ type sigma 'a = <|
   cn_lemmata: list sigma_cn_lemmata;
   cn_predicates: list sigma_cn_predicate;
   cn_datatypes: list sigma_cn_datatype;
-  cn_fun_specs: list sigma_cn_fun_spec;
+  cn_decl_specs: list sigma_cn_decl_spec;
   cn_idents: map sigma_cn_ident Symbol.sym;
 |>
 
@@ -300,7 +310,7 @@ let empty_sigma : sigma 'a = <|
   cn_lemmata = [];
   cn_predicates = [];
   cn_datatypes = [];
-  cn_fun_specs = [];
+  cn_decl_specs = [];
   cn_idents = Map.empty;
 |>
 
